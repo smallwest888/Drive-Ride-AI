@@ -123,7 +123,9 @@ async function parseMessageToRequest(input: ParseInput): Promise<ParsedMessage> 
 
 function extractDestination(message: string, language: Language) {
   if (language === "zh") {
-    const match = message.match(/(?:\u53bb|\u524d\u5f80|\u5230\u8fbe|\u5230)\s*([^\n\uff0c\u3002\uff01\uff1f\uff1b,.;]+)/);
+    const match = message.match(
+      /(?:去|前往|到达|到)\s*(.+?)(?=(?:，|,)?(?:我希望|希望|尽量|预算|帮我|请帮我|请|参加|用于|而且|并且|然后|，|。|！|？|$))/
+    );
     return match?.[1]?.trim() ?? "";
   }
 
@@ -133,8 +135,8 @@ function extractDestination(message: string, language: Language) {
 
 function extractOrigin(message: string, language: Language) {
   if (language === "zh") {
-    const match = message.match(/\u4ece\s*([^\n\uff0c\u3002\uff01\uff1f\uff1b,.;]+?)(?:\u53bb|\u524d\u5f80|\u5230\u8fbe|\u5230|$)/);
-    return match?.[1]?.trim() ?? "";
+    const match = message.match(/从\s*(.+?)(?=(?:开车|自驾|驾车|坐车|乘车|步行)?\s*(?:去|前往|到达|到))/);
+    return (match?.[1] ?? "").replace(/(?:开车|自驾|驾车|坐车|乘车|步行)\s*$/u, "").trim();
   }
 
   const match = message.match(/\bfrom\s+([^,.!;]+?)(?:\bto\b|\bgoing to\b|$)/i);
@@ -147,8 +149,24 @@ function extractBudget(message: string) {
 }
 
 function extractParkingDurationHours(message: string) {
-  const match = message.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h|\u5c0f\u65f6)/i);
-  return match ? Number(match[1]) : 2;
+  const zhMatch = message.match(/(?:停(?:车|留)?(?:大概|约|预计|需要)?|停(?:车|留)?时长(?:大概|约|预计|需要)?)(\d+(?:\.\d+)?)\s*(?:个)?小时/);
+  if (zhMatch) {
+    return Number(zhMatch[1]);
+  }
+
+  const enMatch = message.match(
+    /(?:park(?:ing)?(?:\s+for)?|parking\s+duration(?:\s+of)?|stay(?:ing)?(?:\s+for)?|for\s+parking)\s*(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b/i
+  );
+  if (enMatch) {
+    return Number(enMatch[1]);
+  }
+
+  const shortFormMatch = message.match(/(?:停车|park(?:ing)?)(?:时长)?[:：]?\s*(\d+(?:\.\d+)?)\s*h\b/i);
+  if (shortFormMatch) {
+    return Number(shortFormMatch[1]);
+  }
+
+  return 2;
 }
 
 function extractTime(message: string, language: Language) {
@@ -169,11 +187,25 @@ function extractTime(message: string, language: Language) {
       return date.toISOString();
     }
 
-    const match = message.match(/(?:\u4eca\u5929|\u4eca\u665a|\u660e\u5929|\u4e0b\u5348|\u665a\u4e0a|\u4e0a\u5348|\u65e9\u4e0a)?\s*(\d{1,2})(?::|\u70b9|\u65f6)?(\d{2})?/);
-    if (!match) return null;
+    const colonMatch = message.match(/\b(\d{1,2}):(\d{2})\b/);
+    if (colonMatch) {
+      const date = new Date(now);
+      let hours = Number(colonMatch[1]);
+      const minutes = Number(colonMatch[2]);
+      if ((message.includes("\u4e0b\u5348") || message.includes("\u665a\u4e0a")) && hours < 12) hours += 12;
+      if ((message.includes("\u4e0a\u5348") || message.includes("\u65e9\u4e0a")) && hours === 12) hours = 0;
+      if (message.includes("\u660e\u5929")) date.setDate(date.getDate() + 1);
+      date.setHours(hours, minutes, 0, 0);
+      return date.toISOString();
+    }
 
-    let hours = Number(match[1]);
-    const minutes = Number(match[2] ?? "0");
+    const contextMatch = message.match(
+      /(?:今天|今晚|明天|下午|晚上|上午|早上|中午|出发|到达|抵达|之前|以后)[^\d]{0,8}(\d{1,2})(?:点|时)(\d{1,2})?/
+    );
+    if (!contextMatch) return null;
+
+    let hours = Number(contextMatch[1]);
+    const minutes = Number(contextMatch[2] ?? "0");
     if ((message.includes("\u4e0b\u5348") || message.includes("\u665a\u4e0a")) && hours < 12) hours += 12;
     if ((message.includes("\u4e0a\u5348") || message.includes("\u65e9\u4e0a")) && hours === 12) hours = 0;
 

@@ -344,7 +344,7 @@ export function PlannerApp() {
 
             <button type="button" className="floating-chip" onClick={() => setLanguage((prev) => (prev === "zh" ? "en" : "zh"))}>
               <Globe2 size={15} />
-              {language === "zh" ? "中文 / EN" : "EN / 中文"}
+              {t.menu.language}
             </button>
           </div>
         </header>
@@ -449,9 +449,11 @@ export function PlannerApp() {
                 <label className="field-label">{t.fields.departureLabel}</label>
                 <input
                   className="glass-input single-line"
-                  type="datetime-local"
+                  type="text"
                   value={departureInput}
                   onChange={(event) => setDepartureInput(event.target.value)}
+                  placeholder={t.fields.departurePlaceholder}
+                  inputMode="text"
                 />
 
                 <label className="field-label">{t.fields.parkingLabel}</label>
@@ -768,7 +770,7 @@ function buildPrompt(input: {
       input.requirements ? `其他要求：${input.requirements}` : ""
     ].filter(Boolean);
 
-    return `${parts.join("，")}。请比较费用、时长、舒适度和碳排放，并给出推荐路径。`;
+    return `${parts.join("，")}。请比较费用、时长、舒适度和碳排放，并给出推荐路线。`;
   }
 
   const parts = [
@@ -796,7 +798,7 @@ function buildSubtitle(language: Language, plan: Plan | null) {
   const cost = formatCurrency(plan.totalCost, language);
 
   if (language === "zh") {
-    return `我建议你选择${title}。这条路线预计总时长${duration}，总费用约${cost}。完整路径和谷歌地图入口已经放在右侧。`;
+    return `我建议你选择${title}。这条路线预计总时长约为${duration}，总费用约为${cost}。完整路线和 Google Maps 入口已经放在右侧。`;
   }
 
   return `I recommend ${title}. This route should take about ${duration} in total with an overall cost near ${cost}. The full path and Google Maps links are now available on the right.`;

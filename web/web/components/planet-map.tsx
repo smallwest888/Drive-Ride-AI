@@ -26,8 +26,8 @@ const DEFAULT_CENTER = {
 };
 
 const CAMERA_LIMITS = {
-  minHeight: 240000,
-  maxHeight: 1650000,
+  minHeight: 1800,
+  maxHeight: 14500000,
   defaultHeight: 620000,
   defaultPitch: -1.54,
   minPitch: -1.56,
@@ -287,7 +287,8 @@ function attachCameraGuards(Cesium: any, viewer: any) {
       const height = clamp(rawHeight, CAMERA_LIMITS.minHeight, CAMERA_LIMITS.maxHeight);
       const pitch = clamp(camera.pitch ?? CAMERA_LIMITS.defaultPitch, CAMERA_LIMITS.minPitch, CAMERA_LIMITS.maxPitch);
 
-      const invalidHeight = !Number.isFinite(rawHeight) || rawHeight > CAMERA_LIMITS.maxHeight * 1.2 || rawHeight < CAMERA_LIMITS.minHeight * 0.8;
+      const invalidHeight =
+        !Number.isFinite(rawHeight) || rawHeight > CAMERA_LIMITS.maxHeight * 1.08 || rawHeight < CAMERA_LIMITS.minHeight * 0.75;
       const invalidPitch = (camera.pitch ?? CAMERA_LIMITS.defaultPitch) > CAMERA_LIMITS.maxPitch || (camera.pitch ?? CAMERA_LIMITS.defaultPitch) < CAMERA_LIMITS.minPitch;
 
       if (invalidHeight || invalidPitch) {
@@ -334,7 +335,7 @@ function focusRoute(Cesium: any, viewer: any, plan: Plan) {
   const centerLongitude = (minLongitude + maxLongitude) / 2;
   const centerLatitude = (minLatitude + maxLatitude) / 2;
   const span = Math.max(maxLongitude - minLongitude, maxLatitude - minLatitude);
-  const height = clamp(220000 + span * 850000, CAMERA_LIMITS.minHeight, 720000);
+  const height = clamp(140000 + span * 900000, 20000, 2200000);
 
   viewer.camera.flyTo({
     destination: Cesium.Cartesian3.fromDegrees(centerLongitude, centerLatitude, height),

@@ -26,6 +26,7 @@ type Dictionary = {
     priorityLabel: string;
     budgetLabel: string;
     departureLabel: string;
+    departurePlaceholder: string;
     parkingLabel: string;
     useDeviceLocation: string;
     refreshLocation: string;
@@ -112,6 +113,7 @@ export const dictionaries: Record<Language, Dictionary> = {
       priorityLabel: "优先策略",
       budgetLabel: "预算上限（欧元）",
       departureLabel: "出发时间",
+      departurePlaceholder: "例如：今天 18:30 / 明天上午 9 点 / 2026-06-08 14:00",
       parkingLabel: "预计停车时长（小时）",
       useDeviceLocation: "默认使用当前设备位置",
       refreshLocation: "重新获取设备位置",
@@ -209,6 +211,7 @@ export const dictionaries: Record<Language, Dictionary> = {
       priorityLabel: "Priority",
       budgetLabel: "Budget limit (EUR)",
       departureLabel: "Departure time",
+      departurePlaceholder: "Example: today 18:30 / tomorrow 9:00 am / 2026-06-08 14:00",
       parkingLabel: "Parking duration (hours)",
       useDeviceLocation: "Use current device location by default",
       refreshLocation: "Refresh device location",

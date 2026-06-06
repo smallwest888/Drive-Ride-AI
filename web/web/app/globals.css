@@ -320,6 +320,16 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 28px;
+}
+
+.drawer-nav {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .drawer-section,

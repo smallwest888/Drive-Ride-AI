@@ -103,8 +103,14 @@ app.post("/api/planning/query", async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const response = await runClawdbotTravelAgent(parsed.data);
-  res.json(response);
+  try {
+    const response = await runClawdbotTravelAgent(parsed.data);
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "planning_failed"
+    });
+  }
 });
 
 app.post("/internal/plan-trip", async (req, res) => {
@@ -130,8 +136,14 @@ app.post("/internal/plan-trip", async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const response = await runDirectPlanningService(parsed.data);
-  res.json(response);
+  try {
+    const response = await runDirectPlanningService(parsed.data);
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "planning_failed"
+    });
+  }
 });
 
 app.post("/api/voice/transcribe", upload.single("audio"), async (req, res) => {
