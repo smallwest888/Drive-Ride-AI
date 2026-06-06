@@ -1,6 +1,14 @@
 import type { Language, LocationPoint, ParkingRecord, PlanningResponse } from "@drive-ride/shared";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000/api";
+const configuredBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const basePath =
+  configuredBasePath && configuredBasePath !== "/"
+    ? configuredBasePath.startsWith("/")
+      ? configuredBasePath
+      : `/${configuredBasePath}`
+    : "";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? `${basePath || ""}/api`;
 
 export async function fetchPlanning(message: string, language: Language, currentLocation?: LocationPoint | null) {
   const response = await fetch(`${API_BASE}/planning/query`, {
