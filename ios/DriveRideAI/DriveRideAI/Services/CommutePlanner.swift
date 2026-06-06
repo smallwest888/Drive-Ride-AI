@@ -80,21 +80,24 @@ struct CommutePlanner {
         }
 
         let urgency = detectUrgency(input.userText)
+        // 价格按目的地所在地区的货币显示。
+        let currency = CurrencyFormat.currencyCode(forCountry: destination.countryCode)
         var plans: [CommutePlan] = []
 
         if let transitPlan = await makeTransitPlan(origin: origin, destination: destination,
                                                    transit: transit, driving: driving,
-                                                   profile: input.profile) {
+                                                   profile: input.profile, currency: currency) {
             plans.append(transitPlan)
         }
 
         if input.profile.hasCar, let driving {
             plans.append(await makeCarPlan(origin: origin, destination: destination,
-                                           driving: driving, profile: input.profile))
+                                           driving: driving, profile: input.profile, currency: currency))
 
             if driving.distanceKm >= Const.prMinDistanceKm,
                let prPlan = await makeParkRidePlan(origin: origin, destination: destination,
-                                                   driving: driving, profile: input.profile) {
+                                                   driving: driving, profile: input.profile,
+                                                   currency: currency) {
                 plans.append(prPlan)
             }
         }
@@ -120,7 +123,7 @@ struct CommutePlanner {
 
     private func makeTransitPlan(origin: ResolvedPlace, destination: ResolvedPlace,
                                  transit: RouteLeg?, driving: RouteLeg?,
-                                 profile: UserProfile) async -> CommutePlan? {
+                                 profile: UserProfile, currency: String) async -> CommutePlan? {
         let distance: Double
         let hours: Double
         if let transit {
@@ -140,7 +143,8 @@ struct CommutePlanner {
             ? tr("公共交通直达（\(liveTag)）", "Public transit (\(liveTag))")
             : tr("公共交通直达（\(liveTag)，票价未填）", "Public transit (\(liveTag), fare not set)")
         let segment = PlanSegment(mode: .subway, detail: detail,
-                                  distanceKm: distance, durationHours: hours, cost: fare)
+                                  distanceKm: distance, durationHours: hours, cost: fare,
+                                  currencyCode: currency)
         let navLeg = NavLeg(label: tr("公共交通导航", "Transit navigation"),
                             source: origin.mapItem, destination: destination.mapItem,
                             transport: .transit, polyline: nil)
@@ -157,13 +161,14 @@ struct CommutePlanner {
                      "With your monthly pass, transit is nearly free — the cheapest option.")
                 : tr("无需停车、不受拥堵影响，性价比高。",
                      "No parking, unaffected by traffic — great value."),
+            currencyCode: currency,
             costIsComplete: fareQuote.isKnown,
             navLegs: [navLeg]
         )
     }
 
     private func makeCarPlan(origin: ResolvedPlace, destination: ResolvedPlace,
-                             driving: RouteLeg, profile: UserProfile) async -> CommutePlan {
+                             driving: RouteLeg, profile: UserProfile, currency: String) async -> CommutePlan {
         let fuelCost = profile.car.energyCostPerKm * driving.distanceKm
         let parkQuote = await pricing.cityParkingFee(near: destination.coordinate, profile: profile)
         let parkFee = parkQuote.amount ?? 0
@@ -172,9 +177,11 @@ struct CommutePlanner {
             : tr("市中心停车（费用未填）", "Downtown parking (fee not set)")
         let segments = [
             PlanSegment(mode: .drive, detail: tr("驾车直达（实时路况）", "Drive all the way (live traffic)"),
-                        distanceKm: driving.distanceKm, durationHours: driving.travelHours, cost: fuelCost),
+                        distanceKm: driving.distanceKm, durationHours: driving.travelHours, cost: fuelCost,
+                        currencyCode: currency),
             PlanSegment(mode: .park, detail: parkDetail,
-                        distanceKm: 0, durationHours: Const.cityParkingSearchHours, cost: parkFee)
+                        distanceKm: 0, durationHours: Const.cityParkingSearchHours, cost: parkFee,
+                        currencyCode: currency)
         ]
         let navLeg = NavLeg(label: tr("驾车导航", "Driving navigation"),
                             source: origin.mapItem, destination: destination.mapItem,
@@ -189,6 +196,7 @@ struct CommutePlanner {
             highlight: nil,
             summary: tr("门到门最直接，适合赶时间或多人同行；市中心停车费较高。",
                         "Most direct door-to-door; good when rushed or with companions, but downtown parking is pricey."),
+            currencyCode: currency,
             costIsComplete: parkQuote.isKnown,
             navLegs: [navLeg]
         )
@@ -206,7 +214,7 @@ struct CommutePlanner {
     }
 
     private func makeParkRidePlan(origin: ResolvedPlace, destination: ResolvedPlace,
-                                  driving: RouteLeg, profile: UserProfile) async -> CommutePlan? {
+                                  driving: RouteLeg, profile: UserProfile, currency: String) async -> CommutePlan? {
         // 1) 在靠近目的地一侧（约 65% 处）搜索真实换乘停车场。
         let searchPoint = RouteService.interpolate(origin.coordinate, destination.coordinate, fraction: 0.65)
         let lots = await routeService.searchParkAndRideLots(near: searchPoint)
@@ -272,11 +280,14 @@ struct CommutePlanner {
             : tr("公共交通进城（\(liveTag)，票价未填）", "Transit into the city (\(liveTag), fare not set)")
         let segments = [
             PlanSegment(mode: .drive, detail: tr("驾车至「\(lotName)」", "Drive to \(lotName)"),
-                        distanceKm: driveLeg.distanceKm, durationHours: driveLeg.travelHours, cost: driveCost),
+                        distanceKm: driveLeg.distanceKm, durationHours: driveLeg.travelHours, cost: driveCost,
+                        currencyCode: currency),
             PlanSegment(mode: .park, detail: parkDetail,
-                        distanceKm: 0, durationHours: Const.prParkSwitchHours, cost: parkFee),
+                        distanceKm: 0, durationHours: Const.prParkSwitchHours, cost: parkFee,
+                        currencyCode: currency),
             PlanSegment(mode: .subway, detail: transitDetail,
-                        distanceKm: transitDistance, durationHours: transitHours, cost: fare)
+                        distanceKm: transitDistance, durationHours: transitHours, cost: fare,
+                        currencyCode: currency)
         ]
         let total = driveCost + parkFee + fare
         let time = driveLeg.travelHours + Const.prParkSwitchHours + transitHours
@@ -300,6 +311,7 @@ struct CommutePlanner {
             highlight: nil,
             summary: tr("在「\(lotName)」停车换乘，避开市区拥堵与高价停车，通勤推荐。",
                         "Park at \(lotName) and switch to transit — skip downtown congestion and pricey parking. Great for commuting."),
+            currencyCode: currency,
             costIsComplete: costComplete,
             navLegs: navLegs
         )

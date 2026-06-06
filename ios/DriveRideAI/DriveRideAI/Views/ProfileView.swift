@@ -129,16 +129,16 @@ struct ProfileView: View {
     private var priceSection: some View {
         Section {
             priceRow(title: tr("公交单程票价", "Transit fare / ride"),
-                     unit: tr("元", "¥"),
+                     unit: CurrencyFormat.deviceCurrencySymbol,
                      binding: $profileStore.profile.transitFarePerRide)
 
             if profileStore.profile.hasCar {
                 priceRow(title: tr("市区停车费（一口价）", "Downtown parking (flat)"),
-                         unit: tr("元", "¥"),
+                         unit: CurrencyFormat.deviceCurrencySymbol,
                          binding: $profileStore.profile.cityParkingFee)
 
                 priceRow(title: tr("P+R 换乘停车费", "P+R parking fee"),
-                         unit: tr("元", "¥"),
+                         unit: CurrencyFormat.deviceCurrencySymbol,
                          binding: $profileStore.profile.parkRideParkingFee)
             }
         } header: {
@@ -227,7 +227,7 @@ struct ProfileView: View {
         Section(tr("成本预览", "Cost Preview")) {
             if profileStore.profile.hasCar {
                 LabeledContent(tr("每公里油/电成本", "Energy cost per km"),
-                               value: String(format: "¥%.2f / km", profileStore.profile.car.energyCostPerKm))
+                               value: String(format: "\(CurrencyFormat.deviceCurrencySymbol)%.2f / km", profileStore.profile.car.energyCostPerKm))
             }
             LabeledContent(tr("公共交通折扣", "Transit discount"),
                            value: profileStore.profile.transitCard.coversTransitFully
@@ -247,19 +247,20 @@ struct ProfileView: View {
     }
 
     private var effectiveTransitFareText: String {
+        let symbol = CurrencyFormat.deviceCurrencySymbol
         if profileStore.profile.transitCard.coversTransitFully {
-            return tr("月票覆盖（¥0）", "Pass (¥0)")
+            return tr("月票覆盖（\(symbol)0）", "Pass (\(symbol)0)")
         }
         guard let base = profileStore.profile.transitFarePerRide else {
             return tr("未填", "not set")
         }
         let net = base * profileStore.profile.transitCard.fareMultiplier
-        return String(format: "¥%.1f", net)
+        return String(format: "\(symbol)%.1f", net)
     }
 
     private func priceText(_ value: Double?) -> String {
         guard let value else { return tr("未填", "not set") }
-        return String(format: "¥%g", value)
+        return "\(CurrencyFormat.deviceCurrencySymbol)\(String(format: "%g", value))"
     }
 
     // MARK: - Bindings

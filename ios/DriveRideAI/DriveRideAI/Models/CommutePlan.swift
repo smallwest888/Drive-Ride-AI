@@ -110,6 +110,8 @@ struct PlanSegment: Identifiable, Equatable {
     let distanceKm: Double
     let durationHours: Double
     let cost: Double
+    /// 目的地货币代码（如 "CNY"、"USD"）。
+    var currencyCode: String = CurrencyFormat.deviceCurrencyCode
 
     static func == (lhs: PlanSegment, rhs: PlanSegment) -> Bool { lhs.id == rhs.id }
 }
@@ -127,6 +129,8 @@ struct CommutePlan: Identifiable, Equatable {
     let carbonKg: Double
     var highlight: String?
     let summary: String
+    /// 目的地货币代码（如 "CNY"、"USD"），价格按此显示。
+    var currencyCode: String = CurrencyFormat.deviceCurrencyCode
     /// 成本是否完整：若有票价 / 停车费未填，则为 false（总价为下限）。
     var costIsComplete: Bool = true
     /// 可在 Apple 地图中发起的真实导航段。
@@ -142,7 +146,7 @@ struct CommutePlan: Identifiable, Equatable {
     }
 
     var costText: String {
-        let value = "¥\(Int(cost.rounded()))"
+        let value = CurrencyFormat.string(cost, code: currencyCode)
         // 有未填项时，总价是下限，用「≥」表示，避免误导。
         return costIsComplete ? value : "≥ \(value)"
     }
@@ -157,7 +161,7 @@ extension PlanSegment {
     }
 
     var costText: String {
-        cost <= 0.01 ? tr("免费", "Free") : "¥\(Int(cost.rounded()))"
+        cost <= 0.01 ? tr("免费", "Free") : CurrencyFormat.string(cost, code: currencyCode)
     }
 }
 

@@ -11,6 +11,9 @@ struct ResolvedPlace: Identifiable, Equatable {
     let coordinate: CLLocationCoordinate2D
     let mapItem: MKMapItem
 
+    /// 国家 / 地区代码（如 "US"、"CN"），用于推断目的地货币。
+    var countryCode: String? { mapItem.placemark.isoCountryCode }
+
     init(id: UUID = UUID(),
          name: String,
          subtitle: String = "",
