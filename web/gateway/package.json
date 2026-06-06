@@ -1,0 +1,15 @@
+{
+  "name": "@drive-ride/gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ./scripts/start-gateway.mjs",
+    "start": "node ./scripts/start-gateway.mjs",
+    "build": "node -e \"console.log('gateway has no build step')\"",
+    "typecheck": "node -e \"console.log('gateway has no typecheck step')\""
+  },
+  "dependencies": {
+    "openclaw": "2026.6.1"
+  }
+}

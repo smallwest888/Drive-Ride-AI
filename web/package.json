@@ -1,0 +1,21 @@
+{
+  "name": "drive-ride-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "gateway",
+    "openclaw-drive-ride-plugin",
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w gateway\" \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w shared && npm run build -w openclaw-drive-ride-plugin && npm run build -w server && npm run build -w web",
+    "lint": "npm run lint -w web",
+    "typecheck": "npm run build -w shared && npm run typecheck -w openclaw-drive-ride-plugin && npm run typecheck -w server && npm run typecheck -w web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
