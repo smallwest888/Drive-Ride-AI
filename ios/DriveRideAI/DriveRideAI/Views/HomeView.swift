@@ -3,6 +3,7 @@ import SwiftUI
 /// 主界面：品牌头部 + 起终点输入 + 需求聊天与方案。
 struct HomeView: View {
     @EnvironmentObject private var profileStore: ProfileStore
+    @EnvironmentObject private var appLocale: AppLocale
     @StateObject private var viewModel = PlannerViewModel()
     @State private var showProfile = false
 
@@ -16,7 +17,7 @@ struct HomeView: View {
             InputBarView(
                 text: $viewModel.inputText,
                 isProcessing: viewModel.isProcessing,
-                placeholder: "补充需求，如「有点赶」「想省钱」",
+                placeholder: tr("补充需求，如「有点赶」「想省钱」", "Add details, e.g. \"a bit rushed\", \"save money\""),
                 sendIcon: "paperplane.fill",
                 onSend: viewModel.submit
             )
@@ -25,11 +26,16 @@ struct HomeView: View {
         .sheet(isPresented: $showProfile) {
             ProfileView()
                 .environmentObject(profileStore)
+                .environmentObject(appLocale)
         }
         .onAppear {
             viewModel.updateProfileProvider { [weak profileStore] in
                 profileStore?.profile ?? .default
             }
+        }
+        .onChange(of: appLocale.language) { _, _ in
+            // 用户尚未开始对话时，切换语言后刷新欢迎语为新语言。
+            viewModel.refreshWelcomeIfIdle()
         }
     }
 
@@ -41,7 +47,7 @@ struct HomeView: View {
                 Text("Drive&Ride")
                     .font(.system(size: 34, weight: .heavy))
                     .foregroundStyle(.primary)
-                Text("P+R 停车场 + 公共交通")
+                Text(tr("P+R 停车场 + 公共交通", "P+R Parking + Public Transit"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -53,7 +59,7 @@ struct HomeView: View {
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.primary)
             }
-            .accessibilityLabel("出行信息设置")
+            .accessibilityLabel(tr("出行信息设置", "Travel settings"))
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
@@ -63,9 +69,9 @@ struct HomeView: View {
     private var locationFields: some View {
         VStack(spacing: 10) {
             LocationFieldView(icon: "location.fill", iconColor: .blue,
-                              placeholder: "输入出发地", text: $viewModel.originText)
+                              placeholder: tr("输入出发地", "Enter origin"), text: $viewModel.originText)
             LocationFieldView(icon: "flag.fill", iconColor: .red,
-                              placeholder: "输入目的地", text: $viewModel.destinationText)
+                              placeholder: tr("输入目的地", "Enter destination"), text: $viewModel.destinationText)
         }
         .padding(.horizontal, 20)
         .padding(.top, 4)
@@ -101,7 +107,14 @@ struct HomeView: View {
         viewModel.messages.count <= 1 && !viewModel.isProcessing
     }
 
-    private let suggestions = ["有点赶时间", "想省钱", "尽量环保", "大概 20 公里"]
+    private var suggestions: [String] {
+        [
+            tr("有点赶时间", "A bit rushed"),
+            tr("想省钱", "Save money"),
+            tr("尽量环保", "Go green"),
+            tr("大概 20 公里", "About 20 km")
+        ]
+    }
 
     private var suggestionBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -133,4 +146,5 @@ struct HomeView: View {
 #Preview {
     HomeView()
         .environmentObject(ProfileStore())
+        .environmentObject(AppLocale.shared)
 }

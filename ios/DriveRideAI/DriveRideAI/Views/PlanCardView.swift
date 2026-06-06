@@ -38,7 +38,7 @@ struct PlanCardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(plan.mode.displayName).font(.headline)
                 if rank == 1 {
-                    Text("推荐")
+                    Text(tr("推荐", "Recommended"))
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
@@ -58,11 +58,11 @@ struct PlanCardView: View {
 
     private var metrics: some View {
         HStack(spacing: 0) {
-            metric(title: "总费用", value: plan.costText, icon: "yensign.circle.fill", color: .green)
+            metric(title: tr("总费用", "Cost"), value: plan.costText, icon: "yensign.circle.fill", color: .green)
             divider
-            metric(title: "总耗时", value: plan.durationText, icon: "clock.fill", color: .blue)
+            metric(title: tr("总耗时", "Time"), value: plan.durationText, icon: "clock.fill", color: .blue)
             divider
-            metric(title: "碳排放", value: plan.carbonText, icon: "leaf.fill", color: .mint)
+            metric(title: tr("碳排放", "CO₂"), value: plan.carbonText, icon: "leaf.fill", color: .mint)
         }
     }
 

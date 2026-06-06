@@ -53,7 +53,9 @@ Profile is persisted via `UserDefaults`.
 
 ```
 DriveRideAI/
-├── DriveRideAIApp.swift          # App entry (injects ProfileStore)
+├── DriveRideAIApp.swift          # App entry (injects ProfileStore + AppLocale)
+├── Localization/
+│   └── AppLocale.swift           # Language state + tr(zh, en) helper (in-app switching)
 ├── Models/
 │   ├── CarProfile.swift          # Car model, fuel type, consumption, energy cost
 │   ├── TransitCard.swift         # Transit card types and fare discounts
@@ -78,6 +80,19 @@ DriveRideAI/
     ├── InputBarView.swift        # Bottom needs input bar
     └── TypingIndicatorView.swift
 ```
+
+## Localization (Multi-language UI)
+
+- Supported: **Follow System / 简体中文 / English**. Switch in Settings (gear) → Language;
+  the UI updates instantly.
+- The whole UI is localized — brand header, fields, settings, plan cards, and the agent's
+  generated narrative, follow-up questions, and quick replies.
+- Implementation: a lightweight `AppLocale` (ObservableObject, persisted) plus a
+  `tr(zh, en)` helper. Views subscribe via `@EnvironmentObject`; non-view code reads
+  `AppLocale.shared`. Adding another language means extending `Lang` / `AppLanguage` and
+  the `tr` helper.
+- Note: built-in city detection and urgency keywords cover both Chinese and English inputs;
+  city names in `RouteData` are Chinese, so for English use the origin/destination fields.
 
 ## Notes
 

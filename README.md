@@ -30,3 +30,4 @@ Drive-Ride-AI/
    avoid congestion and expensive downtown parking.
 4. **Proactive follow-ups**: asks for missing origin/destination or distance via quick replies.
 5. Plans tagged "Cheapest / Fastest / Greenest", each with a per-segment cost/time breakdown.
+6. **Multi-language UI**: Follow System / 简体中文 / English, switchable in-app (instant).

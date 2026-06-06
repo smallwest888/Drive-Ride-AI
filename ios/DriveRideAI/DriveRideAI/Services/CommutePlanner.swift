@@ -59,9 +59,17 @@ struct CommutePlanner {
         // 距离无法确定 → 主动追问。
         guard let distance = resolved.distanceKm, distance > 0 else {
             return PlanningOutcome(
-                assistantText: "我已记录行程：\(originName) → \(destName)。不过我还不能确定这两地之间的大致距离，方便告诉我吗？也可以直接在描述里写「约 15 公里」。",
+                assistantText: tr(
+                    "我已记录行程：\(originName) → \(destName)。不过我还不能确定这两地之间的大致距离，方便告诉我吗？也可以直接在描述里写「约 15 公里」。",
+                    "Got your trip: \(originName) → \(destName). I can't tell the distance between them yet — could you let me know? You can also type something like \"~15 km\" in your message."
+                ),
                 plans: [],
-                quickReplies: ["约 5 公里", "约 15 公里", "约 30 公里", "约 50 公里"],
+                quickReplies: [
+                    tr("约 5 公里", "~5 km"),
+                    tr("约 15 公里", "~15 km"),
+                    tr("约 30 公里", "~30 km"),
+                    tr("约 50 公里", "~50 km")
+                ],
                 resolvedOrigin: originName,
                 resolvedDestination: destName
             )
@@ -160,10 +168,14 @@ struct CommutePlanner {
     // MARK: - 紧急程度分析
 
     func detectUrgency(_ text: String) -> Urgency {
-        let urgent = ["赶时间", "尽快", "快点", "很急", "着急", "来不及", "马上", "迟到", "赶飞机", "赶火车", "赶高铁", "急"]
-        let relaxed = ["不急", "不赶", "慢慢", "随便", "散步", "悠闲", "时间充裕", "无所谓时间"]
-        if relaxed.contains(where: text.contains) { return .relaxed }
-        if urgent.contains(where: text.contains) { return .urgent }
+        let lower = text.lowercased()
+        let urgentZh = ["赶时间", "尽快", "快点", "很急", "着急", "来不及", "马上", "迟到", "赶飞机", "赶火车", "赶高铁", "急"]
+        let relaxedZh = ["不急", "不赶", "慢慢", "随便", "散步", "悠闲", "时间充裕", "无所谓时间"]
+        let urgentEn = ["hurry", "asap", "urgent", "rush", "quick", "fast", "late", "in a hurry", "running late"]
+        let relaxedEn = ["no rush", "not in a hurry", "relaxed", "leisure", "take my time", "no hurry"]
+
+        if relaxedZh.contains(where: text.contains) || relaxedEn.contains(where: lower.contains) { return .relaxed }
+        if urgentZh.contains(where: text.contains) || urgentEn.contains(where: lower.contains) { return .urgent }
         return .normal
     }
 
@@ -192,8 +204,10 @@ struct CommutePlanner {
         let fare = transitFare(km: rideKm, card: profile.transitCard)
 
         let segments = [
-            PlanSegment(mode: .walk, detail: "步行至车站", distanceKm: walkKm, durationHours: walkHours, cost: 0),
-            PlanSegment(mode: .subway, detail: "公共交通直达", distanceKm: rideKm, durationHours: rideHours, cost: fare)
+            PlanSegment(mode: .walk, detail: tr("步行至车站", "Walk to the station"),
+                        distanceKm: walkKm, durationHours: walkHours, cost: 0),
+            PlanSegment(mode: .subway, detail: tr("公共交通直达", "Public transit"),
+                        distanceKm: rideKm, durationHours: rideHours, cost: fare)
         ]
         let total = segments.reduce(0) { $0 + $1.cost }
         let time = segments.reduce(0) { $0 + $1.durationHours }
@@ -207,8 +221,10 @@ struct CommutePlanner {
             carbonKg: carbon,
             highlight: nil,
             summary: profile.transitCard.coversTransitFully
-                ? "已有月票，公共交通边际成本几乎为 0，最省钱。"
-                : "无需停车、不受拥堵影响，性价比高。"
+                ? tr("已有月票，公共交通边际成本几乎为 0，最省钱。",
+                     "With your monthly pass, transit is nearly free — the cheapest option.")
+                : tr("无需停车、不受拥堵影响，性价比高。",
+                     "No parking, unaffected by traffic — great value.")
         )
     }
 
@@ -219,9 +235,10 @@ struct CommutePlanner {
         let parking = Const.cityParkingFee
 
         let segments = [
-            PlanSegment(mode: .drive, detail: "驾车直达（市区路况）", distanceKm: distance,
+            PlanSegment(mode: .drive, detail: tr("驾车直达（市区路况）", "Drive all the way (city traffic)"),
+                        distanceKm: distance,
                         durationHours: distance / Const.cityDriveSpeed, cost: fuelCost),
-            PlanSegment(mode: .park, detail: "市中心停车", distanceKm: 0,
+            PlanSegment(mode: .park, detail: tr("市中心停车", "Downtown parking"), distanceKm: 0,
                         durationHours: Const.cityParkingSearchHours, cost: parking)
         ]
         let total = fuelCost + parking
@@ -234,7 +251,8 @@ struct CommutePlanner {
             durationHours: driveHours,
             carbonKg: carbon,
             highlight: nil,
-            summary: "门到门最直接，适合赶时间或多人同行；市中心停车费较高。"
+            summary: tr("门到门最直接，适合赶时间或多人同行；市中心停车费较高。",
+                        "Most direct door-to-door; good when rushed or with companions, but downtown parking is pricey.")
         )
     }
 
@@ -251,12 +269,15 @@ struct CommutePlanner {
         let fare = transitFare(km: cityLegKm, card: profile.transitCard)
 
         let segments = [
-            PlanSegment(mode: .drive, detail: "驾车至「\(lot.name)」", distanceKm: driveLegKm,
-                        durationHours: driveHours, cost: driveCost),
-            PlanSegment(mode: .park, detail: "停车换乘（\(lot.transitLine)）", distanceKm: 0,
-                        durationHours: Const.prParkSwitchHours, cost: lot.parkingFee),
-            PlanSegment(mode: .subway, detail: "公共交通进城", distanceKm: cityLegKm,
-                        durationHours: transitHours, cost: fare)
+            PlanSegment(mode: .drive,
+                        detail: tr("驾车至「\(lot.name)」", "Drive to \(lot.name)"),
+                        distanceKm: driveLegKm, durationHours: driveHours, cost: driveCost),
+            PlanSegment(mode: .park,
+                        detail: tr("停车换乘（\(lot.transitLine)）", "Park & switch (\(lot.transitLine))"),
+                        distanceKm: 0, durationHours: Const.prParkSwitchHours, cost: lot.parkingFee),
+            PlanSegment(mode: .subway,
+                        detail: tr("公共交通进城", "Transit into the city"),
+                        distanceKm: cityLegKm, durationHours: transitHours, cost: fare)
         ]
         let total = segments.reduce(0) { $0 + $1.cost }
         let time = segments.reduce(0) { $0 + $1.durationHours }
@@ -269,7 +290,8 @@ struct CommutePlanner {
             durationHours: time,
             carbonKg: carbon,
             highlight: nil,
-            summary: "避开市区拥堵与高价停车，兼顾自驾灵活与公交高效，通勤推荐。"
+            summary: tr("避开市区拥堵与高价停车，兼顾自驾灵活与公交高效，通勤推荐。",
+                        "Skip downtown congestion and pricey parking — flexible driving plus efficient transit. Great for commuting.")
         )
     }
 
@@ -287,17 +309,20 @@ struct CommutePlanner {
     }
 
     private func annotateHighlights(_ plans: inout [CommutePlan]) {
+        let cheapestTag = tr("最省钱", "Cheapest")
+        let fastestTag = tr("最快", "Fastest")
+        let greenestTag = tr("最环保", "Greenest")
         if let cheapest = plans.min(by: { $0.cost < $1.cost }),
            let idx = plans.firstIndex(of: cheapest) {
-            plans[idx].highlight = "最省钱"
+            plans[idx].highlight = cheapestTag
         }
         if let fastest = plans.min(by: { $0.durationHours < $1.durationHours }),
            let idx = plans.firstIndex(of: fastest) {
-            plans[idx].highlight = plans[idx].highlight.map { "\($0) · 最快" } ?? "最快"
+            plans[idx].highlight = plans[idx].highlight.map { "\($0) · \(fastestTag)" } ?? fastestTag
         }
         if let greenest = plans.min(by: { $0.carbonKg < $1.carbonKg }),
            let idx = plans.firstIndex(of: greenest), plans[idx].highlight == nil {
-            plans[idx].highlight = "最环保"
+            plans[idx].highlight = greenestTag
         }
     }
 
@@ -327,11 +352,20 @@ struct CommutePlanner {
     private func askForLocations(resolved: ResolvedItinerary) -> PlanningOutcome {
         let text: String
         if resolved.origin == nil && resolved.destination == nil {
-            text = "好的，我来帮你规划。请告诉我出发地和目的地——可以在上方两个输入框填写，或直接告诉我，比如「从家到公司，大概 20 公里，有点赶」。"
+            text = tr(
+                "好的，我来帮你规划。请告诉我出发地和目的地——可以在上方两个输入框填写，或直接告诉我，比如「从家到公司，大概 20 公里，有点赶」。",
+                "Sure, I'll help plan it. Tell me your origin and destination — use the two fields above, or just say something like \"home to office, about 20 km, a bit rushed\"."
+            )
         } else if resolved.destination == nil {
-            text = "出发地我记下了（\(resolved.origin ?? "")）。你想去哪儿呢？"
+            text = tr(
+                "出发地我记下了（\(resolved.origin ?? "")）。你想去哪儿呢？",
+                "Got your origin (\(resolved.origin ?? "")). Where would you like to go?"
+            )
         } else {
-            text = "目的地我记下了（\(resolved.destination ?? "")）。从哪里出发呢？"
+            text = tr(
+                "目的地我记下了（\(resolved.destination ?? "")）。从哪里出发呢？",
+                "Got your destination (\(resolved.destination ?? "")). Where are you starting from?"
+            )
         }
         return PlanningOutcome(
             assistantText: text,
@@ -349,26 +383,45 @@ struct CommutePlanner {
                                   profile: UserProfile,
                                   plans: [CommutePlan]) -> String {
         var lines: [String] = []
-        lines.append("已分析 \(origin) → \(destination)（约 \(formatDistance(distance))，\(urgency.displayName)）。")
+        let distText = formatDistance(distance)
+        lines.append(tr(
+            "已分析 \(origin) → \(destination)（约 \(distText)，\(urgency.displayName)）。",
+            "Analyzed \(origin) → \(destination) (~\(distText), \(urgency.displayName))."
+        ))
 
         if !profile.hasCar {
-            lines.append("你当前设置为「无车」，因此只比较公共交通方案。")
+            lines.append(tr(
+                "你当前设置为「无车」，因此只比较公共交通方案。",
+                "Your profile is set to \"no car\", so only public-transit options are compared."
+            ))
         }
 
         if let best = plans.first {
-            let reason: String
             switch urgency {
-            case .urgent: reason = "你比较赶时间，优先推荐用时最短的"
-            case .relaxed: reason = "你不赶时间，优先推荐更省钱的"
-            case .normal: reason = "综合成本与时间，推荐"
+            case .urgent:
+                lines.append(tr(
+                    "你比较赶时间，优先推荐用时最短的「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
+                    "Since you're in a hurry, the fastest option is \(best.mode.displayName): \(best.costText), \(best.durationText)."
+                ))
+            case .relaxed:
+                lines.append(tr(
+                    "你不赶时间，优先推荐更省钱的「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
+                    "Since you're not rushed, the cheaper option is \(best.mode.displayName): \(best.costText), \(best.durationText)."
+                ))
+            case .normal:
+                lines.append(tr(
+                    "综合成本与时间，推荐「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
+                    "Balancing cost and time, I recommend \(best.mode.displayName): \(best.costText), \(best.durationText)."
+                ))
             }
-            lines.append("\(reason)「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。")
         }
-        lines.append("下面是几种方案对比 👇")
+        lines.append(tr("下面是几种方案对比 👇", "Here are the options to compare 👇"))
         return lines.joined(separator: "\n")
     }
 
     private func formatDistance(_ km: Double) -> String {
-        km >= 10 ? "\(Int(km.rounded())) 公里" : String(format: "%.1f 公里", km)
+        km >= 10
+            ? tr("\(Int(km.rounded())) 公里", "\(Int(km.rounded())) km")
+            : tr(String(format: "%.1f 公里", km), String(format: "%.1f km", km))
     }
 }

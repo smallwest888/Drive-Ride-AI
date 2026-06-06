@@ -11,19 +11,19 @@ enum TransitCard: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .none: return "无交通卡"
-        case .storedValue: return "储值卡 / 交通联合卡"
-        case .discountCard: return "折扣卡（学生 / 老年）"
-        case .monthlyPass: return "月票 / 通勤套票"
+        case .none: return tr("无交通卡", "No transit card")
+        case .storedValue: return tr("储值卡 / 交通联合卡", "Stored-value card")
+        case .discountCard: return tr("折扣卡（学生 / 老年）", "Discount card (student / senior)")
+        case .monthlyPass: return tr("月票 / 通勤套票", "Monthly pass")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .none: return "按全价计算公共交通票价"
-        case .storedValue: return "公共交通约 9 折"
-        case .discountCard: return "公共交通约 5 折"
-        case .monthlyPass: return "公共交通段边际成本视为 0"
+        case .none: return tr("按全价计算公共交通票价", "Full transit fare applies")
+        case .storedValue: return tr("公共交通约 9 折", "~10% off transit fares")
+        case .discountCard: return tr("公共交通约 5 折", "~50% off transit fares")
+        case .monthlyPass: return tr("公共交通段边际成本视为 0", "Transit legs treated as zero marginal cost")
         }
     }
 

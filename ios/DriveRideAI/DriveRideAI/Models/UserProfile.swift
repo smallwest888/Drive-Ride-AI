@@ -11,10 +11,10 @@ enum CommutePreference: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .balanced: return "综合推荐"
-        case .cheapest: return "省钱优先"
-        case .fastest: return "时间优先"
-        case .greenest: return "环保优先"
+        case .balanced: return tr("综合推荐", "Balanced")
+        case .cheapest: return tr("省钱优先", "Cheapest")
+        case .fastest: return tr("时间优先", "Fastest")
+        case .greenest: return tr("环保优先", "Greenest")
         }
     }
 }

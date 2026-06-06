@@ -8,9 +8,9 @@ enum Urgency: String, Codable {
 
     var displayName: String {
         switch self {
-        case .relaxed: return "不赶时间"
-        case .normal: return "正常"
-        case .urgent: return "时间紧迫"
+        case .relaxed: return tr("不赶时间", "no rush")
+        case .normal: return tr("正常", "normal pace")
+        case .urgent: return tr("时间紧迫", "in a hurry")
         }
     }
 }
@@ -25,9 +25,9 @@ enum CommuteMode: String, Codable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .transit: return "全程公交"
-        case .car: return "全程自驾"
-        case .parkAndRide: return "P+R 换乘"
+        case .transit: return tr("全程公交", "Public Transit")
+        case .car: return tr("全程自驾", "Driving")
+        case .parkAndRide: return tr("P+R 换乘", "Park & Ride")
         }
     }
 
@@ -58,11 +58,11 @@ enum SegmentMode: String, Codable {
 
     var displayName: String {
         switch self {
-        case .drive: return "驾车"
-        case .bus: return "公交"
-        case .subway: return "地铁"
-        case .walk: return "步行"
-        case .park: return "停车换乘"
+        case .drive: return tr("驾车", "Drive")
+        case .bus: return tr("公交", "Bus")
+        case .subway: return tr("地铁", "Metro")
+        case .walk: return tr("步行", "Walk")
+        case .park: return tr("停车换乘", "Park & switch")
         }
     }
 
@@ -105,12 +105,7 @@ struct CommutePlan: Identifiable, Equatable {
     let summary: String
 
     var durationText: String {
-        let totalMinutes = Int((durationHours * 60).rounded())
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        if hours == 0 { return "\(minutes) 分钟" }
-        if minutes == 0 { return "\(hours) 小时" }
-        return "\(hours) 小时 \(minutes) 分钟"
+        DurationFormat.text(hours: durationHours)
     }
 
     var costText: String { "¥\(Int(cost.rounded()))" }
@@ -121,15 +116,22 @@ struct CommutePlan: Identifiable, Equatable {
 
 extension PlanSegment {
     var durationText: String {
-        let totalMinutes = max(1, Int((durationHours * 60).rounded()))
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        if hours == 0 { return "\(minutes) 分钟" }
-        if minutes == 0 { return "\(hours) 小时" }
-        return "\(hours) 小时 \(minutes) 分钟"
+        DurationFormat.text(hours: durationHours, minMinutes: 1)
     }
 
     var costText: String {
-        cost <= 0.01 ? "免费" : "¥\(Int(cost.rounded()))"
+        cost <= 0.01 ? tr("免费", "Free") : "¥\(Int(cost.rounded()))"
+    }
+}
+
+/// 时长格式化（本地化）。
+enum DurationFormat {
+    static func text(hours value: Double, minMinutes: Int = 0) -> String {
+        let totalMinutes = max(minMinutes, Int((value * 60).rounded()))
+        let h = totalMinutes / 60
+        let m = totalMinutes % 60
+        if h == 0 { return tr("\(m) 分钟", "\(m) min") }
+        if m == 0 { return tr("\(h) 小时", "\(h) h") }
+        return tr("\(h) 小时 \(m) 分钟", "\(h) h \(m) min")
     }
 }

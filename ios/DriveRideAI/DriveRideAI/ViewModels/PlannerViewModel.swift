@@ -26,7 +26,10 @@ final class PlannerViewModel: ObservableObject {
         messages.append(
             ChatMessage(
                 role: .assistant,
-                text: "你好，我是 Drive&Ride 出行助手 🅿️🚇\n填好上方的出发地、目的地，再描述一下需求（比如「有点赶时间」「想省钱」），我会帮你比较公交、自驾、P+R 换乘的成本和时间，给出几种方案。"
+                text: tr(
+                    "你好，我是 Drive&Ride 出行助手 🅿️🚇\n填好上方的出发地、目的地，再描述一下需求（比如「有点赶时间」「想省钱」），我会帮你比较公交、自驾、P+R 换乘的成本和时间，给出几种方案。",
+                    "Hi, I'm your Drive&Ride assistant 🅿️🚇\nFill in the origin and destination above, then describe your needs (e.g. \"a bit rushed\", \"save money\"). I'll compare transit, driving, and Park & Ride by cost and time, and give you a few options."
+                )
             )
         )
     }
@@ -56,10 +59,11 @@ final class PlannerViewModel: ObservableObject {
         let o = originText.trimmingCharacters(in: .whitespacesAndNewlines)
         let d = destinationText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !o.isEmpty || !d.isEmpty {
-            parts.append("\(o.isEmpty ? "（未填）" : o) → \(d.isEmpty ? "（未填）" : d)")
+            let blank = tr("（未填）", "(empty)")
+            parts.append("\(o.isEmpty ? blank : o) → \(d.isEmpty ? blank : d)")
         }
         if !extra.isEmpty { parts.append(extra) }
-        return parts.joined(separator: "　·　")
+        return parts.joined(separator: tr("　·　", "  ·  "))
     }
 
     private func runPlanning(extraText: String) {
@@ -117,6 +121,13 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func reset() {
+        messages.removeAll()
+        appendWelcome()
+    }
+
+    /// 仅在还未开始对话（只有欢迎语）时，用当前语言重建欢迎语。
+    func refreshWelcomeIfIdle() {
+        guard messages.count <= 1, !isProcessing else { return }
         messages.removeAll()
         appendWelcome()
     }

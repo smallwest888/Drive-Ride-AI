@@ -11,10 +11,10 @@ enum FuelType: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .gasoline: return "汽油"
-        case .diesel: return "柴油"
-        case .electric: return "纯电"
-        case .hybrid: return "插混"
+        case .gasoline: return tr("汽油", "Gasoline")
+        case .diesel: return tr("柴油", "Diesel")
+        case .electric: return tr("纯电", "Electric")
+        case .hybrid: return tr("插混", "Hybrid")
         }
     }
 
@@ -23,6 +23,14 @@ enum FuelType: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .electric: return "kWh/100km"
         default: return "L/100km"
+        }
+    }
+
+    /// 能源单价单位文案。
+    var priceUnit: String {
+        switch self {
+        case .electric: return tr("元/kWh", "/kWh")
+        default: return tr("元/L", "/L")
         }
     }
 
