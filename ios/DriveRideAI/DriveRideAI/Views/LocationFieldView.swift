@@ -1,11 +1,18 @@
 import SwiftUI
 
-/// 起点 / 终点输入框（参考设计：左侧图标 + 文本框 + 右侧搜索图标）。
-struct LocationFieldView: View {
+/// 起点 / 终点输入框：左图标 + 文本框 + 可选定位按钮 + 清除/搜索图标。
+struct LocationFieldView<Field: Hashable>: View {
     let icon: String
     let iconColor: Color
     let placeholder: String
     @Binding var text: String
+
+    let field: Field
+    @FocusState.Binding var focused: Field?
+
+    var showLocate: Bool = false
+    var isLocating: Bool = false
+    var onLocate: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 12) {
@@ -18,6 +25,21 @@ struct LocationFieldView: View {
                 .font(.body)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .focused($focused, equals: field)
+                .submitLabel(.search)
+
+            if showLocate {
+                Button(action: onLocate) {
+                    if isLocating {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "location.circle.fill")
+                            .foregroundStyle(.tint)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isLocating)
+            }
 
             if !text.isEmpty {
                 Button {
@@ -39,14 +61,4 @@ struct LocationFieldView: View {
                 .fill(Color(.secondarySystemBackground))
         )
     }
-}
-
-#Preview {
-    VStack(spacing: 12) {
-        LocationFieldView(icon: "location.fill", iconColor: .blue,
-                          placeholder: "输入出发地", text: .constant(""))
-        LocationFieldView(icon: "flag.fill", iconColor: .red,
-                          placeholder: "输入目的地", text: .constant("公司"))
-    }
-    .padding()
 }

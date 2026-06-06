@@ -1,9 +1,10 @@
 import Foundation
+import MapKit
 
 /// Agent 的输入。
 struct PlanningInput {
-    var origin: TripLocation?
-    var destination: TripLocation?
+    var origin: ResolvedPlace?
+    var destination: ResolvedPlace?
     var userText: String
     var profile: UserProfile
 }
@@ -12,160 +13,240 @@ struct PlanningInput {
 struct PlanningOutcome {
     var assistantText: String
     var plans: [CommutePlan]
-    /// 信息不足时给出的快捷追问选项。
     var quickReplies: [String]
-    /// Agent 解析出的起终点（用于回填界面）。
     var resolvedOrigin: String?
     var resolvedDestination: String?
 }
 
-/// Drive&Ride 规划 Agent。
+/// Drive&Ride 规划 Agent —— 使用 MapKit 真实路线。
 ///
 /// 工作流：
-/// 1. 获取出发地、目的地（界面字段优先，其次从描述中抽取）；
-/// 2. 确定行程距离（描述中的显式距离优先，其次按已知城市估算）；
-/// 3. 分析描述判断紧急程度；
-/// 4. 判断可行方式：公交 / 自驾 / P+R 换乘（依据是否有车）；
-/// 5. 计算每种方式的总成本与总时间，给出多套方案；
-/// 6. 信息不足时主动追问。
+/// 1. 取出发地、目的地（真实坐标，来自地址搜索 / 定位）；
+/// 2. 用 MKDirections 计算真实的驾车路线与公交 ETA；
+/// 3. 搜索真实的 P+R 停车换乘点，组合「驾车 + 公共交通」；
+/// 4. 分析描述判断紧急程度；
+/// 5. 按真实里程/时长计算成本与时间，给出多套方案（含可发起的导航）。
 struct CommutePlanner {
 
-    // MARK: - 估算参数
+    private let routeService = RouteService()
+
     private enum Const {
-        static let cityDriveSpeed = 26.0      // 市区平均车速 km/h（含拥堵）
-        static let suburbDriveSpeed = 52.0    // 城郊/快速路车速 km/h
-        static let transitSpeed = 22.0        // 公共交通有效速度 km/h（含停站）
-        static let walkSpeed = 4.6            // 步行 km/h
+        static let transitSpeedFallback = 22.0   // 公交无 ETA 时的兜底速度 km/h
+        static let transitAccessHours = 12.0 / 60.0
 
-        static let cityParkingFee = 30.0      // 市中心停车费（元，估算）
-        static let cityParkingSearchHours = 10.0 / 60.0  // 找车位/步行 10 分钟
-        static let prParkSwitchHours = 4.0 / 60.0        // 换乘 4 分钟
+        static let cityParkingFee = 30.0         // 市中心停车费估算（元）
+        static let prParkingFee = 10.0           // 换乘停车场停车费估算（元）
+        static let cityParkingSearchHours = 8.0 / 60.0
+        static let prParkSwitchHours = 4.0 / 60.0
 
-        static let transitAccessHours = 12.0 / 60.0 // 公交首末步行+候车 ~12 分钟
+        static let carCarbonPerKm = 0.16
+        static let evCarbonPerKm = 0.07
+        static let transitCarbonPerKm = 0.05
 
-        static let carCarbonPerKm = 0.16      // kg CO₂/km（燃油车近似）
-        static let evCarbonPerKm = 0.07       // kg CO₂/km（纯电近似）
-        static let transitCarbonPerKm = 0.05  // kg CO₂/km
+        static let prMinDistanceKm = 6.0         // 低于此距离不建议 P+R
     }
 
-    func plan(_ input: PlanningInput) -> PlanningOutcome {
-        let resolved = resolveItinerary(input)
-
-        // 缺少目的地（或出发地）→ 主动追问。
-        guard let originName = resolved.origin, let destName = resolved.destination else {
-            return askForLocations(resolved: resolved)
+    func plan(_ input: PlanningInput) async -> PlanningOutcome {
+        guard let origin = input.origin, let destination = input.destination else {
+            return askForLocations(origin: input.origin, destination: input.destination)
         }
 
-        // 距离无法确定 → 主动追问。
-        guard let distance = resolved.distanceKm, distance > 0 else {
+        // 真实路线：驾车（含几何）+ 公交 ETA。
+        async let drivingTask = routeService.route(from: origin.coordinate,
+                                                   to: destination.coordinate,
+                                                   transport: .automobile)
+        async let transitTask = routeService.transitETA(from: origin.coordinate,
+                                                        to: destination.coordinate)
+        let driving = await drivingTask
+        let transit = await transitTask
+
+        guard driving != nil || transit != nil else {
             return PlanningOutcome(
                 assistantText: tr(
-                    "我已记录行程：\(originName) → \(destName)。不过我还不能确定这两地之间的大致距离，方便告诉我吗？也可以直接在描述里写「约 15 公里」。",
-                    "Got your trip: \(originName) → \(destName). I can't tell the distance between them yet — could you let me know? You can also type something like \"~15 km\" in your message."
+                    "我没能在「\(origin.name)」和「\(destination.name)」之间规划出路线，可能距离过远或地址不够准确。可以换一个更具体的地址再试。",
+                    "I couldn't find a route between \(origin.name) and \(destination.name) — they may be too far apart or the addresses aren't precise. Try a more specific address."
                 ),
                 plans: [],
-                quickReplies: [
-                    tr("约 5 公里", "~5 km"),
-                    tr("约 15 公里", "~15 km"),
-                    tr("约 30 公里", "~30 km"),
-                    tr("约 50 公里", "~50 km")
-                ],
-                resolvedOrigin: originName,
-                resolvedDestination: destName
+                quickReplies: [],
+                resolvedOrigin: origin.name,
+                resolvedDestination: destination.name
             )
         }
 
         let urgency = detectUrgency(input.userText)
-        let plans = buildPlans(distance: distance, profile: input.profile, urgency: urgency)
+        var plans: [CommutePlan] = []
 
-        let text = composeNarrative(
-            origin: originName,
-            destination: destName,
-            distance: distance,
-            urgency: urgency,
-            profile: input.profile,
-            plans: plans
-        )
-
-        return PlanningOutcome(
-            assistantText: text,
-            plans: plans,
-            quickReplies: [],
-            resolvedOrigin: originName,
-            resolvedDestination: destName
-        )
-    }
-
-    // MARK: - 行程解析
-
-    private struct ResolvedItinerary {
-        var origin: String?
-        var destination: String?
-        var distanceKm: Double?
-    }
-
-    private func resolveItinerary(_ input: PlanningInput) -> ResolvedItinerary {
-        var origin = input.origin.flatMap { $0.isEmpty ? nil : $0.name }
-        var destination = input.destination.flatMap { $0.isEmpty ? nil : $0.name }
-
-        // 字段为空时，尝试从描述中抽取城市（「从 A 到 B」结构优先）。
-        if origin == nil || destination == nil {
-            let extracted = extractEndpoints(from: input.userText)
-            origin = origin ?? extracted.origin
-            destination = destination ?? extracted.destination
+        if let transitPlan = makeTransitPlan(origin: origin, destination: destination,
+                                             transit: transit, driving: driving,
+                                             profile: input.profile) {
+            plans.append(transitPlan)
         }
 
-        // 距离：显式数字优先，其次按已知城市估算。
-        var distance = explicitDistance(in: input.userText)
-        if distance == nil, let o = origin, let d = destination {
-            distance = RouteData.estimatedDistance(from: o, to: d)
-        }
+        if input.profile.hasCar, let driving {
+            plans.append(makeCarPlan(origin: origin, destination: destination,
+                                     driving: driving, profile: input.profile))
 
-        return ResolvedItinerary(origin: origin, destination: destination, distanceKm: distance)
-    }
-
-    private func extractEndpoints(from text: String) -> (origin: String?, destination: String?) {
-        var origin: String?
-        var destination: String?
-
-        if let fromRange = text.range(of: "从") {
-            let after = String(text[fromRange.upperBound...])
-            origin = RouteData.detectCities(in: after).first
-        }
-        for keyword in ["到", "去", "至", "前往"] {
-            if let range = text.range(of: keyword) {
-                let after = String(text[range.upperBound...])
-                if let city = RouteData.detectCities(in: after).first {
-                    destination = city
-                    break
-                }
+            if driving.distanceKm >= Const.prMinDistanceKm,
+               let prPlan = await makeParkRidePlan(origin: origin, destination: destination,
+                                                   driving: driving, profile: input.profile) {
+                plans.append(prPlan)
             }
         }
 
-        if destination == nil {
-            let cities = RouteData.detectCities(in: text)
-            if cities.count >= 2 {
-                origin = origin ?? cities[0]
-                destination = cities[1]
-            } else if cities.count == 1 {
-                destination = cities[0]
-            }
+        annotateHighlights(&plans)
+        plans = sort(plans, urgency: urgency, preference: input.profile.preference)
+
+        let text = composeNarrative(origin: origin, destination: destination,
+                                    driving: driving, urgency: urgency,
+                                    profile: input.profile, plans: plans)
+
+        return PlanningOutcome(assistantText: text, plans: plans, quickReplies: [],
+                               resolvedOrigin: origin.name, resolvedDestination: destination.name)
+    }
+
+    // MARK: - 方案构建
+
+    private func makeTransitPlan(origin: ResolvedPlace, destination: ResolvedPlace,
+                                 transit: RouteLeg?, driving: RouteLeg?,
+                                 profile: UserProfile) -> CommutePlan? {
+        let distance: Double
+        let hours: Double
+        if let transit {
+            distance = transit.distanceKm
+            hours = transit.travelHours
+        } else if let driving {
+            distance = driving.distanceKm
+            hours = driving.distanceKm / Const.transitSpeedFallback + Const.transitAccessHours
+        } else {
+            return nil
         }
-        if origin == destination { origin = nil }
-        return (origin, destination)
+
+        let fare = transitFare(km: distance, card: profile.transitCard)
+        let segment = PlanSegment(
+            mode: .subway,
+            detail: transit != nil ? tr("公共交通直达（实时）", "Public transit (live ETA)")
+                                    : tr("公共交通直达（估算）", "Public transit (estimated)"),
+            distanceKm: distance, durationHours: hours, cost: fare
+        )
+        let navLeg = NavLeg(label: tr("公共交通导航", "Transit navigation"),
+                            source: origin.mapItem, destination: destination.mapItem,
+                            transport: .transit, polyline: nil)
+
+        return CommutePlan(
+            mode: .transit,
+            segments: [segment],
+            cost: fare,
+            durationHours: hours,
+            carbonKg: distance * Const.transitCarbonPerKm,
+            highlight: nil,
+            summary: profile.transitCard.coversTransitFully
+                ? tr("已有月票，公共交通边际成本几乎为 0，最省钱。",
+                     "With your monthly pass, transit is nearly free — the cheapest option.")
+                : tr("无需停车、不受拥堵影响，性价比高。",
+                     "No parking, unaffected by traffic — great value."),
+            navLegs: [navLeg]
+        )
     }
 
-    private func explicitDistance(in text: String) -> Double? {
-        let pattern = "(\\d+(?:\\.\\d+)?)\\s*(公里|千米|km|KM|Km|km)"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(text.startIndex..., in: text)
-        guard let match = regex.firstMatch(in: text, range: range),
-              let r = Range(match.range(at: 1), in: text),
-              let value = Double(text[r]), value > 0 else { return nil }
-        return value
+    private func makeCarPlan(origin: ResolvedPlace, destination: ResolvedPlace,
+                             driving: RouteLeg, profile: UserProfile) -> CommutePlan {
+        let fuelCost = profile.car.energyCostPerKm * driving.distanceKm
+        let segments = [
+            PlanSegment(mode: .drive, detail: tr("驾车直达（实时路况）", "Drive all the way (live traffic)"),
+                        distanceKm: driving.distanceKm, durationHours: driving.travelHours, cost: fuelCost),
+            PlanSegment(mode: .park, detail: tr("市中心停车", "Downtown parking"),
+                        distanceKm: 0, durationHours: Const.cityParkingSearchHours, cost: Const.cityParkingFee)
+        ]
+        let navLeg = NavLeg(label: tr("驾车导航", "Driving navigation"),
+                            source: origin.mapItem, destination: destination.mapItem,
+                            transport: .automobile, polyline: driving.polyline)
+
+        return CommutePlan(
+            mode: .car,
+            segments: segments,
+            cost: fuelCost + Const.cityParkingFee,
+            durationHours: driving.travelHours + Const.cityParkingSearchHours,
+            carbonKg: driving.distanceKm * carbonPerKm(for: profile.car),
+            highlight: nil,
+            summary: tr("门到门最直接，适合赶时间或多人同行；市中心停车费较高。",
+                        "Most direct door-to-door; good when rushed or with companions, but downtown parking is pricey."),
+            navLegs: [navLeg]
+        )
     }
 
-    // MARK: - 紧急程度分析
+    private func makeParkRidePlan(origin: ResolvedPlace, destination: ResolvedPlace,
+                                  driving: RouteLeg, profile: UserProfile) async -> CommutePlan? {
+        // 在靠近目的地一侧（约 65% 处）搜索真实换乘停车场。
+        let searchPoint = RouteService.interpolate(origin.coordinate, destination.coordinate, fraction: 0.65)
+        guard let lot = await routeService.findParkAndRide(near: searchPoint) else { return nil }
+
+        let lotCoord = lot.placemark.coordinate
+        // 避免选到离起点太近或就在终点的「停车场」。
+        let driveStraight = RouteService.straightLineKm(origin.coordinate, lotCoord)
+        let toDestStraight = RouteService.straightLineKm(lotCoord, destination.coordinate)
+        guard driveStraight > 1.0, toDestStraight > 0.5 else { return nil }
+
+        async let driveTask = routeService.route(from: origin.coordinate, to: lotCoord, transport: .automobile)
+        async let transitTask = routeService.transitETA(from: lotCoord, to: destination.coordinate)
+        guard let driveLeg = await driveTask else { return nil }
+        let transitLeg = await transitTask
+
+        let transitDistance = transitLeg?.distanceKm ?? toDestStraight * 1.3
+        let transitHours = transitLeg?.travelHours
+            ?? (transitDistance / Const.transitSpeedFallback + Const.transitAccessHours)
+        let fare = transitFare(km: transitDistance, card: profile.transitCard)
+        let driveCost = profile.car.energyCostPerKm * driveLeg.distanceKm
+
+        let lotName = lot.name ?? tr("换乘停车场", "Park & Ride lot")
+        let segments = [
+            PlanSegment(mode: .drive, detail: tr("驾车至「\(lotName)」", "Drive to \(lotName)"),
+                        distanceKm: driveLeg.distanceKm, durationHours: driveLeg.travelHours, cost: driveCost),
+            PlanSegment(mode: .park, detail: tr("停车换乘（费用估算）", "Park & switch (fee estimated)"),
+                        distanceKm: 0, durationHours: Const.prParkSwitchHours, cost: Const.prParkingFee),
+            PlanSegment(mode: .subway,
+                        detail: transitLeg != nil ? tr("公共交通进城（实时）", "Transit into the city (live)")
+                                                  : tr("公共交通进城（估算）", "Transit into the city (estimated)"),
+                        distanceKm: transitDistance, durationHours: transitHours, cost: fare)
+        ]
+        let total = driveCost + Const.prParkingFee + fare
+        let time = driveLeg.travelHours + Const.prParkSwitchHours + transitHours
+        let carbon = driveLeg.distanceKm * carbonPerKm(for: profile.car) + transitDistance * Const.transitCarbonPerKm
+
+        let navLegs = [
+            NavLeg(label: tr("驾车到换乘点", "Drive to lot"),
+                   source: origin.mapItem, destination: lot,
+                   transport: .automobile, polyline: driveLeg.polyline),
+            NavLeg(label: tr("换乘进城", "Transit to destination"),
+                   source: lot, destination: destination.mapItem,
+                   transport: .transit, polyline: nil)
+        ]
+
+        return CommutePlan(
+            mode: .parkAndRide,
+            segments: segments,
+            cost: total,
+            durationHours: time,
+            carbonKg: carbon,
+            highlight: nil,
+            summary: tr("在「\(lotName)」停车换乘，避开市区拥堵与高价停车，通勤推荐。",
+                        "Park at \(lotName) and switch to transit — skip downtown congestion and pricey parking. Great for commuting."),
+            navLegs: navLegs
+        )
+    }
+
+    // MARK: - 计费
+
+    private func transitFare(km: Double, card: TransitCard) -> Double {
+        if card.coversTransitFully { return 0 }
+        let base = min(max(2.0, 2.0 + 0.3 * km), 12.0)
+        return base * card.fareMultiplier
+    }
+
+    private func carbonPerKm(for car: CarProfile) -> Double {
+        car.fuelType == .electric ? Const.evCarbonPerKm : Const.carCarbonPerKm
+    }
+
+    // MARK: - 紧急程度
 
     func detectUrgency(_ text: String) -> Urgency {
         let lower = text.lowercased()
@@ -179,134 +260,7 @@ struct CommutePlanner {
         return .normal
     }
 
-    // MARK: - 方案构建
-
-    private func buildPlans(distance: Double, profile: UserProfile, urgency: Urgency) -> [CommutePlan] {
-        var plans: [CommutePlan] = [makeTransitPlan(distance: distance, profile: profile)]
-
-        if profile.hasCar {
-            plans.append(makeCarPlan(distance: distance, profile: profile))
-            if distance >= ParkRideData.minApplicableDistanceKm {
-                plans.append(makeParkRidePlan(distance: distance, profile: profile))
-            }
-        }
-
-        annotateHighlights(&plans)
-        return sort(plans, urgency: urgency, preference: profile.preference)
-    }
-
-    // 全程公交
-    private func makeTransitPlan(distance: Double, profile: UserProfile) -> CommutePlan {
-        let walkKm = 0.6
-        let rideKm = max(0, distance - walkKm)
-        let rideHours = rideKm / Const.transitSpeed + Const.transitAccessHours
-        let walkHours = walkKm / Const.walkSpeed
-        let fare = transitFare(km: rideKm, card: profile.transitCard)
-
-        let segments = [
-            PlanSegment(mode: .walk, detail: tr("步行至车站", "Walk to the station"),
-                        distanceKm: walkKm, durationHours: walkHours, cost: 0),
-            PlanSegment(mode: .subway, detail: tr("公共交通直达", "Public transit"),
-                        distanceKm: rideKm, durationHours: rideHours, cost: fare)
-        ]
-        let total = segments.reduce(0) { $0 + $1.cost }
-        let time = segments.reduce(0) { $0 + $1.durationHours }
-        let carbon = rideKm * Const.transitCarbonPerKm
-
-        return CommutePlan(
-            mode: .transit,
-            segments: segments,
-            cost: total,
-            durationHours: time,
-            carbonKg: carbon,
-            highlight: nil,
-            summary: profile.transitCard.coversTransitFully
-                ? tr("已有月票，公共交通边际成本几乎为 0，最省钱。",
-                     "With your monthly pass, transit is nearly free — the cheapest option.")
-                : tr("无需停车、不受拥堵影响，性价比高。",
-                     "No parking, unaffected by traffic — great value.")
-        )
-    }
-
-    // 全程自驾
-    private func makeCarPlan(distance: Double, profile: UserProfile) -> CommutePlan {
-        let driveHours = distance / Const.cityDriveSpeed + Const.cityParkingSearchHours
-        let fuelCost = profile.car.energyCostPerKm * distance
-        let parking = Const.cityParkingFee
-
-        let segments = [
-            PlanSegment(mode: .drive, detail: tr("驾车直达（市区路况）", "Drive all the way (city traffic)"),
-                        distanceKm: distance,
-                        durationHours: distance / Const.cityDriveSpeed, cost: fuelCost),
-            PlanSegment(mode: .park, detail: tr("市中心停车", "Downtown parking"), distanceKm: 0,
-                        durationHours: Const.cityParkingSearchHours, cost: parking)
-        ]
-        let total = fuelCost + parking
-        let carbon = distance * carbonPerKm(for: profile.car)
-
-        return CommutePlan(
-            mode: .car,
-            segments: segments,
-            cost: total,
-            durationHours: driveHours,
-            carbonKg: carbon,
-            highlight: nil,
-            summary: tr("门到门最直接，适合赶时间或多人同行；市中心停车费较高。",
-                        "Most direct door-to-door; good when rushed or with companions, but downtown parking is pricey.")
-        )
-    }
-
-    // P+R 换乘：驾车至城郊停车场 + 公共交通进城
-    private func makeParkRidePlan(distance: Double, profile: UserProfile) -> CommutePlan {
-        let cityLegKm = min(distance * 0.4, 12)      // 拥堵的进城段交给公共交通
-        let driveLegKm = max(0, distance - cityLegKm)
-        let lot = ParkRideData.selectLot(for: distance)
-
-        let driveHours = driveLegKm / Const.suburbDriveSpeed
-        let driveCost = profile.car.energyCostPerKm * driveLegKm
-
-        let transitHours = cityLegKm / Const.transitSpeed + Const.transitAccessHours
-        let fare = transitFare(km: cityLegKm, card: profile.transitCard)
-
-        let segments = [
-            PlanSegment(mode: .drive,
-                        detail: tr("驾车至「\(lot.name)」", "Drive to \(lot.name)"),
-                        distanceKm: driveLegKm, durationHours: driveHours, cost: driveCost),
-            PlanSegment(mode: .park,
-                        detail: tr("停车换乘（\(lot.transitLine)）", "Park & switch (\(lot.transitLine))"),
-                        distanceKm: 0, durationHours: Const.prParkSwitchHours, cost: lot.parkingFee),
-            PlanSegment(mode: .subway,
-                        detail: tr("公共交通进城", "Transit into the city"),
-                        distanceKm: cityLegKm, durationHours: transitHours, cost: fare)
-        ]
-        let total = segments.reduce(0) { $0 + $1.cost }
-        let time = segments.reduce(0) { $0 + $1.durationHours }
-        let carbon = driveLegKm * carbonPerKm(for: profile.car) + cityLegKm * Const.transitCarbonPerKm
-
-        return CommutePlan(
-            mode: .parkAndRide,
-            segments: segments,
-            cost: total,
-            durationHours: time,
-            carbonKg: carbon,
-            highlight: nil,
-            summary: tr("避开市区拥堵与高价停车，兼顾自驾灵活与公交高效，通勤推荐。",
-                        "Skip downtown congestion and pricey parking — flexible driving plus efficient transit. Great for commuting.")
-        )
-    }
-
-    // MARK: - 计费与排序
-
-    /// 公共交通票价（元）。
-    private func transitFare(km: Double, card: TransitCard) -> Double {
-        if card.coversTransitFully { return 0 }
-        let base = min(max(2.0, 2.0 + 0.3 * km), 12.0)
-        return base * card.fareMultiplier
-    }
-
-    private func carbonPerKm(for car: CarProfile) -> Double {
-        car.fuelType == .electric ? Const.evCarbonPerKm : Const.carCarbonPerKm
-    }
+    // MARK: - 排序与高亮
 
     private func annotateHighlights(_ plans: inout [CommutePlan]) {
         let cheapestTag = tr("最省钱", "Cheapest")
@@ -338,84 +292,64 @@ struct CommutePlanner {
         }
     }
 
-    /// 综合评分：成本与时间归一化加权；不赶时间时更看重成本。
     private func score(_ plan: CommutePlan, urgency: Urgency) -> Double {
         let costWeight = urgency == .relaxed ? 5000.0 : 3000.0
         let timeWeight = urgency == .relaxed ? 2.0 : 5.0
-        let costScore = 1.0 / (plan.cost + 1)
-        let timeScore = 1.0 / (plan.durationHours + 0.2)
-        return costScore * costWeight + timeScore * timeWeight
+        return (1.0 / (plan.cost + 1)) * costWeight + (1.0 / (plan.durationHours + 0.2)) * timeWeight
     }
 
     // MARK: - 文案
 
-    private func askForLocations(resolved: ResolvedItinerary) -> PlanningOutcome {
+    private func askForLocations(origin: ResolvedPlace?, destination: ResolvedPlace?) -> PlanningOutcome {
         let text: String
-        if resolved.origin == nil && resolved.destination == nil {
-            text = tr(
-                "好的，我来帮你规划。请告诉我出发地和目的地——可以在上方两个输入框填写，或直接告诉我，比如「从家到公司，大概 20 公里，有点赶」。",
-                "Sure, I'll help plan it. Tell me your origin and destination — use the two fields above, or just say something like \"home to office, about 20 km, a bit rushed\"."
-            )
-        } else if resolved.destination == nil {
-            text = tr(
-                "出发地我记下了（\(resolved.origin ?? "")）。你想去哪儿呢？",
-                "Got your origin (\(resolved.origin ?? "")). Where would you like to go?"
-            )
+        if origin == nil && destination == nil {
+            text = tr("请在上方填写出发地和目的地（支持地址搜索，或点定位用当前位置）。",
+                      "Please set your origin and destination above (address search supported, or tap locate to use your current position).")
+        } else if destination == nil {
+            text = tr("出发地已设置。请填写目的地。", "Origin set. Please enter a destination.")
         } else {
-            text = tr(
-                "目的地我记下了（\(resolved.destination ?? "")）。从哪里出发呢？",
-                "Got your destination (\(resolved.destination ?? "")). Where are you starting from?"
-            )
+            text = tr("目的地已设置。请填写出发地。", "Destination set. Please enter an origin.")
         }
-        return PlanningOutcome(
-            assistantText: text,
-            plans: [],
-            quickReplies: [],
-            resolvedOrigin: resolved.origin,
-            resolvedDestination: resolved.destination
-        )
+        return PlanningOutcome(assistantText: text, plans: [], quickReplies: [],
+                               resolvedOrigin: origin?.name, resolvedDestination: destination?.name)
     }
 
-    private func composeNarrative(origin: String,
-                                  destination: String,
-                                  distance: Double,
-                                  urgency: Urgency,
-                                  profile: UserProfile,
-                                  plans: [CommutePlan]) -> String {
+    private func composeNarrative(origin: ResolvedPlace, destination: ResolvedPlace,
+                                  driving: RouteLeg?, urgency: Urgency,
+                                  profile: UserProfile, plans: [CommutePlan]) -> String {
         var lines: [String] = []
-        let distText = formatDistance(distance)
-        lines.append(tr(
-            "已分析 \(origin) → \(destination)（约 \(distText)，\(urgency.displayName)）。",
-            "Analyzed \(origin) → \(destination) (~\(distText), \(urgency.displayName))."
-        ))
+        if let driving {
+            let dist = formatDistance(driving.distanceKm)
+            lines.append(tr(
+                "已用实时路线分析 \(origin.name) → \(destination.name)（驾车约 \(dist)，\(urgency.displayName)）。",
+                "Analyzed \(origin.name) → \(destination.name) with live routing (driving ~\(dist), \(urgency.displayName))."
+            ))
+        } else {
+            lines.append(tr(
+                "已分析 \(origin.name) → \(destination.name)（\(urgency.displayName)）。",
+                "Analyzed \(origin.name) → \(destination.name) (\(urgency.displayName))."
+            ))
+        }
 
         if !profile.hasCar {
-            lines.append(tr(
-                "你当前设置为「无车」，因此只比较公共交通方案。",
-                "Your profile is set to \"no car\", so only public-transit options are compared."
-            ))
+            lines.append(tr("你设置为「无车」，仅比较公共交通方案。",
+                            "Your profile is \"no car\", so only transit options are compared."))
         }
 
         if let best = plans.first {
             switch urgency {
             case .urgent:
-                lines.append(tr(
-                    "你比较赶时间，优先推荐用时最短的「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
-                    "Since you're in a hurry, the fastest option is \(best.mode.displayName): \(best.costText), \(best.durationText)."
-                ))
+                lines.append(tr("赶时间，优先推荐最快的「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
+                                "In a hurry — fastest is \(best.mode.displayName): \(best.costText), \(best.durationText)."))
             case .relaxed:
-                lines.append(tr(
-                    "你不赶时间，优先推荐更省钱的「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
-                    "Since you're not rushed, the cheaper option is \(best.mode.displayName): \(best.costText), \(best.durationText)."
-                ))
+                lines.append(tr("不赶时间，优先推荐更省钱的「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
+                                "Not rushed — cheaper option is \(best.mode.displayName): \(best.costText), \(best.durationText)."))
             case .normal:
-                lines.append(tr(
-                    "综合成本与时间，推荐「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
-                    "Balancing cost and time, I recommend \(best.mode.displayName): \(best.costText), \(best.durationText)."
-                ))
+                lines.append(tr("综合成本与时间，推荐「\(best.mode.displayName)」：\(best.costText)、\(best.durationText)。",
+                                "Balancing cost and time, I recommend \(best.mode.displayName): \(best.costText), \(best.durationText)."))
             }
         }
-        lines.append(tr("下面是几种方案对比 👇", "Here are the options to compare 👇"))
+        lines.append(tr("点方案里的「导航」可直接用 Apple 地图出发 👇", "Tap \"Navigate\" in a plan to start in Apple Maps 👇"))
         return lines.joined(separator: "\n")
     }
 

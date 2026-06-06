@@ -1,4 +1,28 @@
 import SwiftUI
+import MapKit
+
+/// 一段可用 Apple 地图发起的真实导航。
+struct NavLeg: Identifiable {
+    let id = UUID()
+    let label: String
+    let source: MKMapItem
+    let destination: MKMapItem
+    let transport: MKDirectionsTransportType
+    let polyline: MKPolyline?
+
+    /// 在 Apple 地图中打开该段导航。
+    func openInAppleMaps() {
+        let mode: String
+        switch transport {
+        case .automobile: mode = MKLaunchOptionsDirectionsModeDriving
+        case .walking: mode = MKLaunchOptionsDirectionsModeWalking
+        case .transit: mode = MKLaunchOptionsDirectionsModeTransit
+        default: mode = MKLaunchOptionsDirectionsModeDriving
+        }
+        MKMapItem.openMaps(with: [source, destination],
+                           launchOptions: [MKLaunchOptionsDirectionsModeKey: mode])
+    }
+}
 
 /// 行程紧急程度，由 Agent 从用户描述中分析得出。
 enum Urgency: String, Codable {
@@ -103,6 +127,13 @@ struct CommutePlan: Identifiable, Equatable {
     let carbonKg: Double
     var highlight: String?
     let summary: String
+    /// 可在 Apple 地图中发起的真实导航段。
+    var navLegs: [NavLeg] = []
+
+    /// 用于地图预览的所有路线几何。
+    var polylines: [MKPolyline] {
+        navLegs.compactMap { $0.polyline }
+    }
 
     var durationText: String {
         DurationFormat.text(hours: durationHours)

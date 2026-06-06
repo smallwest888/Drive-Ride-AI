@@ -1,11 +1,12 @@
 # Drive-Ride-AI · iOS App
 
-A SwiftUI **Drive&Ride** commute assistant focused on **Park & Ride (P+R) + public transit**.
-Users set up their travel profile (car model / energy, transit card), enter an origin and
-destination, and add free-form needs in a chat box. An agent then resolves the trip,
-infers urgency, decides the best mode (transit / car / P+R hybrid), computes total cost and
-time, and returns several plans — proactively asking follow-up questions when information
-is missing.
+A SwiftUI **Drive&Ride** commute assistant focused on **Park & Ride (P+R) + public transit**,
+powered by **MapKit** for real addresses and real routes.
+Users set up their travel profile (car model / energy, transit card), search a **real origin
+and destination** (address autocomplete, or one-tap current location), and add free-form
+needs in a chat box. An agent then computes **live driving routes and transit ETAs**, finds a
+**real Park & Ride lot**, infers urgency, computes total cost and time, and returns several
+plans — each with **one-tap Apple Maps navigation** and an in-app route map preview.
 
 ## Requirements
 
@@ -24,19 +25,18 @@ is missing.
 
 ## How It Works (Agent Flow)
 
-1. **Resolve the itinerary** — read the origin/destination fields, otherwise extract them
-   from the description.
-2. **Determine distance** — explicit distance in the text (e.g. "约 15 公里") takes priority,
-   otherwise estimate from built-in city data.
-3. **Analyze urgency** — classify the description as relaxed / normal / urgent.
-4. **Decide modes** — public transit always; full driving and P+R hybrid only when the
-   profile has a car (P+R requires a minimum distance to be worthwhile).
-5. **Compute cost & time** — per-segment breakdown using the user's car energy cost and
-   transit-card discount.
-6. **Return several plans** — tagged "Cheapest / Fastest / Greenest" and sorted by urgency
-   and preference.
-7. **Ask follow-ups** — when origin/destination or distance is missing, the assistant asks
-   with quick-reply chips.
+1. **Resolve real places** — origin/destination come from MapKit address autocomplete
+   (`MKLocalSearchCompleter` + `MKLocalSearch`) or the device's current location
+   (`CLLocationManager` + reverse geocoding).
+2. **Compute real routes** — `MKDirections.calculate` for the driving route (distance, live
+   travel time, and route geometry) and `MKDirections.calculateETA` for transit ETA.
+3. **Find a real P+R lot** — `MKLocalSearch` looks for a park-and-ride / parking lot near the
+   destination side of the trip, then routes drive → lot and transit → destination.
+4. **Analyze urgency** — classify the description as relaxed / normal / urgent.
+5. **Compute cost & time** — based on the **real distances/times**, using the user's car
+   energy cost and transit-card discount (fares/parking remain estimates).
+6. **Return several plans** — tagged "Cheapest / Fastest / Greenest", each with an in-app
+   route map and one-tap Apple Maps navigation per leg.
 
 ## Travel Profile (Settings)
 
@@ -60,22 +60,24 @@ DriveRideAI/
 │   ├── CarProfile.swift          # Car model, fuel type, consumption, energy cost
 │   ├── TransitCard.swift         # Transit card types and fare discounts
 │   ├── UserProfile.swift         # Car + transit card + default preference (Codable)
-│   ├── TripLocation.swift        # Origin / destination
-│   ├── CommutePlan.swift         # CommuteMode (transit/car/P+R), segments, urgency
+│   ├── ResolvedPlace.swift       # A real place: name + coordinate + MKMapItem
+│   ├── CommutePlan.swift         # CommuteMode (transit/car/P+R), segments, NavLeg
 │   └── ChatMessage.swift         # Chat message (plans + quick replies)
 ├── Services/
-│   ├── RouteData.swift           # Built-in city coordinates + distance estimation
-│   ├── ParkRideData.swift        # Park & Ride lots
-│   └── CommutePlanner.swift      # The agent: resolve / urgency / cost+time / follow-ups
+│   ├── LocationSearchService.swift # MapKit address autocomplete + resolve to coordinate
+│   ├── LocationManager.swift     # Current location + reverse geocoding
+│   ├── RouteService.swift        # MKDirections routes/ETA + P+R lot search
+│   └── CommutePlanner.swift      # The async agent: real routes / urgency / cost+time
 ├── Stores/
 │   └── ProfileStore.swift        # Persists UserProfile (UserDefaults)
 ├── ViewModels/
-│   └── PlannerViewModel.swift    # Home state: fields, chat, planning
+│   └── PlannerViewModel.swift    # Home state: places, search, async planning
 └── Views/
-    ├── HomeView.swift            # Brand header + location fields + chat & plans
-    ├── LocationFieldView.swift   # Origin / destination input field
+    ├── HomeView.swift            # Header + address search/locate + chat & plans
+    ├── LocationFieldView.swift   # Address input field (autocomplete + locate button)
+    ├── RoutePreviewView.swift    # Map preview of the real route + navigate buttons
     ├── ProfileView.swift         # Travel profile settings
-    ├── PlanCardView.swift        # Plan card with per-segment cost/time breakdown
+    ├── PlanCardView.swift        # Plan card with breakdown + Route/Navigate actions
     ├── MessageBubbleView.swift   # Chat bubbles + quick-reply chips
     ├── InputBarView.swift        # Bottom needs input bar
     └── TypingIndicatorView.swift
@@ -91,13 +93,15 @@ DriveRideAI/
   `tr(zh, en)` helper. Views subscribe via `@EnvironmentObject`; non-view code reads
   `AppLocale.shared`. Adding another language means extending `Lang` / `AppLanguage` and
   the `tr` helper.
-- Note: built-in city detection and urgency keywords cover both Chinese and English inputs;
-  city names in `RouteData` are Chinese, so for English use the origin/destination fields.
+- Urgency keywords cover both Chinese and English inputs.
 
 ## Notes
 
-- City distances, P+R lots, parking fees, fares and per-mode time are **engineering
-  estimates** for comparison demos. Integrate real map / fare / POI APIs and replace the
-  logic in `RouteData`, `ParkRideData`, and `CommutePlanner` for production accuracy.
-- For arbitrary street addresses (no offline geocoder), the agent asks for an approximate
-  distance — or you can type it in the description.
+- **Addresses, distances, travel times, route geometry, and the P+R lot are real**, from
+  Apple Maps (MapKit). Requires network; coverage of transit data depends on the region
+  (when transit ETA is unavailable, the planner falls back to a distance-based estimate).
+- **Fares and parking fees remain estimates** — MapKit does not expose fare/parking data.
+  Costs are computed from the real distance using the user's car energy cost and
+  transit-card discount.
+- Location permission (`NSLocationWhenInUseUsageDescription`) is used only for the
+  "current location" button; address search works without it.

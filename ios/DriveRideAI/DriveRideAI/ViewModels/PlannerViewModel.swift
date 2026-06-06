@@ -1,16 +1,21 @@
 import Foundation
 import SwiftUI
+import MapKit
 
-/// 主界面状态：起终点字段、聊天记录、调用 Agent 规划。
+/// 主界面状态：起终点（真实地点）、聊天记录、调用 Agent 规划。
 @MainActor
 final class PlannerViewModel: ObservableObject {
     @Published var originText: String = ""
     @Published var destinationText: String = ""
     @Published var inputText: String = ""
+    @Published var originPlace: ResolvedPlace?
+    @Published var destinationPlace: ResolvedPlace?
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var isProcessing: Bool = false
 
     private let planner = CommutePlanner()
+    /// 仅用于把自由文本解析成坐标（与界面联想用的实例分离）。
+    private let resolver = LocationSearchService()
     private var profileProvider: () -> UserProfile
 
     init(profileProvider: @escaping () -> UserProfile = { .default }) {
@@ -27,28 +32,43 @@ final class PlannerViewModel: ObservableObject {
             ChatMessage(
                 role: .assistant,
                 text: tr(
-                    "你好，我是 Drive&Ride 出行助手 🅿️🚇\n填好上方的出发地、目的地，再描述一下需求（比如「有点赶时间」「想省钱」），我会帮你比较公交、自驾、P+R 换乘的成本和时间，给出几种方案。",
-                    "Hi, I'm your Drive&Ride assistant 🅿️🚇\nFill in the origin and destination above, then describe your needs (e.g. \"a bit rushed\", \"save money\"). I'll compare transit, driving, and Park & Ride by cost and time, and give you a few options."
+                    "你好，我是 Drive&Ride 出行助手 🅿️🚇\n在上方搜索真实的出发地、目的地（或点定位用当前位置），再描述需求（如「有点赶」「想省钱」）。我会用 Apple 地图的实时路线，比较公交、自驾、P+R 换乘的成本和时间，并支持一键导航。",
+                    "Hi, I'm your Drive&Ride assistant 🅿️🚇\nSearch a real origin and destination above (or tap locate for your current position), then describe your needs (e.g. \"a bit rushed\", \"save money\"). I use Apple Maps live routing to compare transit, driving, and Park & Ride by cost and time — with one-tap navigation."
                 )
             )
         )
     }
 
-    /// 用户点击「规划 / 发送」。
+    func setOrigin(_ place: ResolvedPlace) {
+        originPlace = place
+        originText = place.name
+    }
+
+    func setDestination(_ place: ResolvedPlace) {
+        destinationPlace = place
+        destinationText = place.name
+    }
+
+    /// 用户编辑了输入框文本：若与已选地点名不一致，则使已解析地点失效。
+    func originTextChanged() {
+        if originPlace?.name != originText { originPlace = nil }
+    }
+
+    func destinationTextChanged() {
+        if destinationPlace?.name != destinationText { destinationPlace = nil }
+    }
+
     func submit() {
         let extra = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         inputText = ""
 
-        // 组合一条用户可见消息：起终点 + 额外需求。
         let userVisible = composeUserMessage(extra: extra)
         if !userVisible.isEmpty {
             messages.append(ChatMessage(role: .user, text: userVisible))
         }
-
         runPlanning(extraText: extra)
     }
 
-    /// 点击快捷追问选项。
     func sendQuickReply(_ text: String) {
         messages.append(ChatMessage(role: .user, text: text))
         runPlanning(extraText: text)
@@ -73,51 +93,29 @@ final class PlannerViewModel: ObservableObject {
         messages.append(typing)
         isProcessing = true
 
-        let input = PlanningInput(
-            origin: makeLocation(originText),
-            destination: makeLocation(destinationText),
-            userText: combinedUserText(extra: extraText),
-            profile: profileProvider()
-        )
-
         Task {
-            // 轻微延迟，呈现「思考中」的体验。
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            let outcome = planner.plan(input)
+            // 文本已填但未通过联想选择时，尝试解析为真实坐标。
+            if originPlace == nil, !originText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                originPlace = await resolver.resolve(query: originText)
+            }
+            if destinationPlace == nil, !destinationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                destinationPlace = await resolver.resolve(query: destinationText,
+                                                          near: originPlace?.coordinate)
+            }
+
+            let input = PlanningInput(origin: originPlace,
+                                      destination: destinationPlace,
+                                      userText: extraText,
+                                      profile: profileProvider())
+            let outcome = await planner.plan(input)
 
             messages.removeAll { $0.id == typing.id }
-
-            // 回填 Agent 解析出的起终点。
-            if let o = outcome.resolvedOrigin, originText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                originText = o
-            }
-            if let d = outcome.resolvedDestination, destinationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                destinationText = d
-            }
-
             messages.append(
-                ChatMessage(role: .assistant,
-                            text: outcome.assistantText,
-                            plans: outcome.plans,
-                            quickReplies: outcome.quickReplies)
+                ChatMessage(role: .assistant, text: outcome.assistantText,
+                            plans: outcome.plans, quickReplies: outcome.quickReplies)
             )
             isProcessing = false
         }
-    }
-
-    private func combinedUserText(extra: String) -> String {
-        var parts: [String] = []
-        let o = originText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let d = destinationText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !o.isEmpty { parts.append("从\(o)") }
-        if !d.isEmpty { parts.append("到\(d)") }
-        if !extra.isEmpty { parts.append(extra) }
-        return parts.joined(separator: " ")
-    }
-
-    private func makeLocation(_ text: String) -> TripLocation? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : TripLocation(name: trimmed)
     }
 
     func reset() {
@@ -125,7 +123,6 @@ final class PlannerViewModel: ObservableObject {
         appendWelcome()
     }
 
-    /// 仅在还未开始对话（只有欢迎语）时，用当前语言重建欢迎语。
     func refreshWelcomeIfIdle() {
         guard messages.count <= 1, !isProcessing else { return }
         messages.removeAll()

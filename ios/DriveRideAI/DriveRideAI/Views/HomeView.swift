@@ -1,10 +1,18 @@
 import SwiftUI
+import MapKit
 
-/// 主界面：品牌头部 + 起终点输入 + 需求聊天与方案。
+/// 主界面：品牌头部 + 真实地址搜索 + 需求聊天与方案。
 struct HomeView: View {
+    enum Field: Hashable { case origin, destination }
+
     @EnvironmentObject private var profileStore: ProfileStore
     @EnvironmentObject private var appLocale: AppLocale
     @StateObject private var viewModel = PlannerViewModel()
+    @StateObject private var originSearch = LocationSearchService()
+    @StateObject private var destinationSearch = LocationSearchService()
+    @StateObject private var locationManager = LocationManager()
+
+    @FocusState private var focusedField: Field?
     @State private var showProfile = false
 
     var body: some View {
@@ -19,7 +27,7 @@ struct HomeView: View {
                 isProcessing: viewModel.isProcessing,
                 placeholder: tr("补充需求，如「有点赶」「想省钱」", "Add details, e.g. \"a bit rushed\", \"save money\""),
                 sendIcon: "paperplane.fill",
-                onSend: viewModel.submit
+                onSend: { focusedField = nil; viewModel.submit() }
             )
         }
         .background(Color(.systemBackground))
@@ -33,9 +41,14 @@ struct HomeView: View {
                 profileStore?.profile ?? .default
             }
         }
-        .onChange(of: appLocale.language) { _, _ in
-            // 用户尚未开始对话时，切换语言后刷新欢迎语为新语言。
-            viewModel.refreshWelcomeIfIdle()
+        .onChange(of: appLocale.language) { _, _ in viewModel.refreshWelcomeIfIdle() }
+        .onChange(of: viewModel.originText) { _, newValue in
+            viewModel.originTextChanged()
+            originSearch.update(query: newValue)
+        }
+        .onChange(of: viewModel.destinationText) { _, newValue in
+            viewModel.destinationTextChanged()
+            destinationSearch.update(query: newValue)
         }
     }
 
@@ -68,13 +81,78 @@ struct HomeView: View {
 
     private var locationFields: some View {
         VStack(spacing: 10) {
-            LocationFieldView(icon: "location.fill", iconColor: .blue,
-                              placeholder: tr("输入出发地", "Enter origin"), text: $viewModel.originText)
-            LocationFieldView(icon: "flag.fill", iconColor: .red,
-                              placeholder: tr("输入目的地", "Enter destination"), text: $viewModel.destinationText)
+            LocationFieldView(
+                icon: "location.fill", iconColor: .blue,
+                placeholder: tr("输入出发地", "Enter origin"),
+                text: $viewModel.originText,
+                field: .origin, focused: $focusedField,
+                showLocate: true, isLocating: locationManager.isResolving,
+                onLocate: locateCurrent
+            )
+            if viewModel.originPlace == nil, !originSearch.suggestions.isEmpty {
+                suggestionList(originSearch.suggestions) { completion in
+                    Task { await select(completion, from: originSearch, isOrigin: true) }
+                }
+            }
+
+            LocationFieldView(
+                icon: "flag.fill", iconColor: .red,
+                placeholder: tr("输入目的地", "Enter destination"),
+                text: $viewModel.destinationText,
+                field: .destination, focused: $focusedField
+            )
+            if viewModel.destinationPlace == nil, !destinationSearch.suggestions.isEmpty {
+                suggestionList(destinationSearch.suggestions) { completion in
+                    Task { await select(completion, from: destinationSearch, isOrigin: false) }
+                }
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 4)
+    }
+
+    private func suggestionList(_ items: [MKLocalSearchCompletion],
+                                onTap: @escaping (MKLocalSearchCompletion) -> Void) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(items.prefix(5).enumerated()), id: \.offset) { _, item in
+                Button {
+                    onTap(item)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.circle.fill").foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.title).font(.subheadline).foregroundStyle(.primary)
+                            if !item.subtitle.isEmpty {
+                                Text(item.subtitle).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+                Divider().padding(.leading, 40)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemBackground)))
+    }
+
+    private func select(_ completion: MKLocalSearchCompletion,
+                        from service: LocationSearchService, isOrigin: Bool) async {
+        service.clear()
+        guard let place = await service.resolve(completion) else { return }
+        if isOrigin { viewModel.setOrigin(place) } else { viewModel.setDestination(place) }
+        focusedField = nil
+    }
+
+    private func locateCurrent() {
+        Task {
+            if let place = await locationManager.requestCurrentPlace() {
+                originSearch.clear()
+                viewModel.setOrigin(place)
+                focusedField = nil
+            }
+        }
     }
 
     // MARK: - 会话与方案
@@ -95,6 +173,7 @@ struct HomeView: View {
                 .padding(.vertical, 16)
             }
             .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { focusedField = nil }
             .onChange(of: viewModel.messages) { _, _ in
                 withAnimation(.easeOut(duration: 0.25)) {
                     proxy.scrollTo(bottomAnchor, anchor: .bottom)
@@ -112,7 +191,7 @@ struct HomeView: View {
             tr("有点赶时间", "A bit rushed"),
             tr("想省钱", "Save money"),
             tr("尽量环保", "Go green"),
-            tr("大概 20 公里", "About 20 km")
+            tr("正常通勤", "Normal commute")
         ]
     }
 
@@ -122,6 +201,7 @@ struct HomeView: View {
                 ForEach(suggestions, id: \.self) { s in
                     Button {
                         viewModel.inputText = s
+                        focusedField = nil
                         viewModel.submit()
                     } label: {
                         Text(s)

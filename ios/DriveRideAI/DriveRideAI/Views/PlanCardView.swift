@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// 单套出行方案卡片：总览指标 + 分段明细 + 点评。
+/// 单套出行方案卡片：总览指标 + 分段明细 + 点评 + 真实导航。
 struct PlanCardView: View {
     let plan: CommutePlan
     let rank: Int
+
+    @State private var showRoute = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -15,6 +17,10 @@ struct PlanCardView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if !plan.navLegs.isEmpty { actionButtons }
+        }
+        .sheet(isPresented: $showRoute) {
+            RoutePreviewView(plan: plan)
         }
         .padding(14)
         .background(
@@ -85,6 +91,34 @@ struct PlanCardView: View {
 
     private var divider: some View {
         Rectangle().fill(Color(.separator).opacity(0.5)).frame(width: 1, height: 28)
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 8) {
+            Button {
+                showRoute = true
+            } label: {
+                Label(tr("路线", "Route"), systemImage: "map.fill")
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(Capsule().fill(plan.mode.tint.opacity(0.12)))
+                    .foregroundStyle(plan.mode.tint)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                plan.navLegs.first?.openInAppleMaps()
+            } label: {
+                Label(tr("导航", "Navigate"), systemImage: "location.north.line.fill")
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(Capsule().fill(plan.mode.tint))
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private var segmentBreakdown: some View {
