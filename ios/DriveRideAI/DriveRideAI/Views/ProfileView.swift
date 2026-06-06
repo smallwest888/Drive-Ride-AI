@@ -15,6 +15,7 @@ struct ProfileView: View {
                     carDetailSection
                 }
                 transitSection
+                priceSection
                 preferenceSection
                 costPreviewSection
             }
@@ -122,6 +123,43 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - 真实价格（票价 / 停车费）
+
+    private var priceSection: some View {
+        Section {
+            priceRow(title: tr("公交单程票价", "Transit fare / ride"),
+                     unit: tr("元", "¥"),
+                     binding: $profileStore.profile.transitFarePerRide)
+
+            if profileStore.profile.hasCar {
+                priceRow(title: tr("市区停车费（一口价）", "Downtown parking (flat)"),
+                         unit: tr("元", "¥"),
+                         binding: $profileStore.profile.cityParkingFee)
+
+                priceRow(title: tr("P+R 换乘停车费", "P+R parking fee"),
+                         unit: tr("元", "¥"),
+                         binding: $profileStore.profile.parkRideParkingFee)
+            }
+        } header: {
+            Text(tr("真实价格（票价 / 停车费）", "Real Prices (Fares / Parking)"))
+        } footer: {
+            Text(tr("苹果 / 地图不提供票价与停车费数据，请填写你所在城市的真实价格（配合上方交通卡折扣）。未填的项不计入总价，方案会标注「未填」并以「≥」显示总价，绝不编造。",
+                    "Apple/Maps don't provide fare or parking data — enter your city's real prices (the transit-card discount above still applies). Unfilled items are excluded, shown as \"≥\" and marked \"not set\" — never fabricated."))
+        }
+    }
+
+    private func priceRow(title: String, unit: String, binding: Binding<Double?>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField(tr("未填", "not set"), text: currencyBinding(binding))
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+            Text(unit).foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - 偏好
 
     private var preferenceSection: some View {
@@ -151,7 +189,32 @@ struct ProfileView: View {
                            ? tr("月票（边际 0）", "Pass (zero marginal)")
                            : tr(String(format: "%.0f 折", profileStore.profile.transitCard.fareMultiplier * 10),
                                 String(format: "%.0f%% off", (1 - profileStore.profile.transitCard.fareMultiplier) * 100)))
+
+            LabeledContent(tr("公交实际单程", "Actual transit fare"),
+                           value: effectiveTransitFareText)
+            if profileStore.profile.hasCar {
+                LabeledContent(tr("市区停车费", "Downtown parking"),
+                               value: priceText(profileStore.profile.cityParkingFee))
+                LabeledContent(tr("P+R 换乘停车费", "P+R parking"),
+                               value: priceText(profileStore.profile.parkRideParkingFee))
+            }
         }
+    }
+
+    private var effectiveTransitFareText: String {
+        if profileStore.profile.transitCard.coversTransitFully {
+            return tr("月票覆盖（¥0）", "Pass (¥0)")
+        }
+        guard let base = profileStore.profile.transitFarePerRide else {
+            return tr("未填", "not set")
+        }
+        let net = base * profileStore.profile.transitCard.fareMultiplier
+        return String(format: "¥%.1f", net)
+    }
+
+    private func priceText(_ value: Double?) -> String {
+        guard let value else { return tr("未填", "not set") }
+        return String(format: "¥%g", value)
     }
 
     // MARK: - Bindings
@@ -160,6 +223,18 @@ struct ProfileView: View {
         Binding(
             get: { profileStore.profile.car.effectiveUnitPrice },
             set: { profileStore.profile.car.unitPrice = $0 }
+        )
+    }
+
+    /// 把可选金额（Double?）桥接成文本输入：空字符串表示未填（nil）。
+    private func currencyBinding(_ source: Binding<Double?>) -> Binding<String> {
+        Binding(
+            get: { source.wrappedValue.map { String(format: "%g", $0) } ?? "" },
+            set: { text in
+                let cleaned = text.replacingOccurrences(of: ",", with: ".")
+                    .trimmingCharacters(in: .whitespaces)
+                source.wrappedValue = cleaned.isEmpty ? nil : Double(cleaned)
+            }
         )
     }
 

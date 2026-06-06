@@ -19,13 +19,24 @@ enum CommutePreference: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// 用户出行信息：是否有车、车型、交通卡、默认偏好。可持久化。
+/// 用户出行信息：是否有车、车型、交通卡、默认偏好、真实价格。可持久化。
+///
+/// 关于价格：苹果 / MapKit 不提供公交票价与停车费数据，因此这两类价格不能自动取真值。
+/// 这里改为由用户填写其所在城市的**真实价格**（可选）。未填的项不计入总价，绝不编造。
+/// 自驾油 / 电费由车辆能耗 × 能源单价 × MapKit 真实里程算出，本身即真实。
 struct UserProfile: Codable, Equatable {
     /// 是否拥有可用车辆。无车则不生成自驾 / P+R 方案。
     var hasCar: Bool
     var car: CarProfile
     var transitCard: TransitCard
     var preference: CommutePreference
+
+    /// 公交单程基础票价（元，真实值，用户填写）。配合交通卡折扣使用。nil = 未填。
+    var transitFarePerRide: Double?
+    /// 自驾到市区的停车费（元，一口价，真实值）。nil = 未填。
+    var cityParkingFee: Double?
+    /// P+R 换乘停车场停车费（元，真实值）。nil = 未填。
+    var parkRideParkingFee: Double?
 
     static let `default` = UserProfile(
         hasCar: true,

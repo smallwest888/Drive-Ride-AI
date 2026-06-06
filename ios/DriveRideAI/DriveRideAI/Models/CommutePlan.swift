@@ -127,6 +127,8 @@ struct CommutePlan: Identifiable, Equatable {
     let carbonKg: Double
     var highlight: String?
     let summary: String
+    /// 成本是否完整：若有票价 / 停车费未填，则为 false（总价为下限）。
+    var costIsComplete: Bool = true
     /// 可在 Apple 地图中发起的真实导航段。
     var navLegs: [NavLeg] = []
 
@@ -139,7 +141,11 @@ struct CommutePlan: Identifiable, Equatable {
         DurationFormat.text(hours: durationHours)
     }
 
-    var costText: String { "¥\(Int(cost.rounded()))" }
+    var costText: String {
+        let value = "¥\(Int(cost.rounded()))"
+        // 有未填项时，总价是下限，用「≥」表示，避免误导。
+        return costIsComplete ? value : "≥ \(value)"
+    }
     var carbonText: String { String(format: "%.1f kg CO₂", carbonKg) }
 
     static func == (lhs: CommutePlan, rhs: CommutePlan) -> Bool { lhs.id == rhs.id }
