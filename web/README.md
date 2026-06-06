@@ -1,10 +1,13 @@
-# Web 端（规划中）
+# Web Client (Planned)
 
-Drive-Ride-AI 的 Web 版本目录。当前以 iOS App 为主力开发，Web 端为占位，后续补充。
+This directory will host the web version of Drive-Ride-AI. The iOS app is the current
+primary focus; this is a placeholder to be filled in later.
 
-## 规划方向
+## Direction
 
-- 复用与 iOS 端一致的出行规划逻辑（建议抽象为后端服务 / 共享 API）。
-- 前端可采用 React / Next.js，实现同样的 ChatBot 交互与方案卡片展示。
+- Reuse the same travel-planning logic as the iOS app (ideally extracted into a backend
+  service / shared API).
+- The frontend can use React / Next.js to deliver the same ChatBot interaction and plan cards.
 
-> 提示：保持与 `ios/` 端相同的数据模型（出行需求 → 出行方式 → 多套方案），便于前后端复用。
+> Tip: Keep the same data model as the `ios/` app (trip request → travel modes → multiple
+> plans) so logic can be shared across frontend and backend.

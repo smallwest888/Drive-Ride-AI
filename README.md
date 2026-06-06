@@ -1,24 +1,28 @@
-# Drive-Ride-AI · AI 出行助手
+# Drive-Ride-AI · AI Travel Assistant
 
-一个 AI 驱动的出行助手。用户用自然语言描述出行需求，AI 会分析出发地与目的地，
-比较多种出行方式（飞机、高铁、自驾、大巴等）的**成本**与**时间**，并给出几种可选方案。
+An AI-powered travel assistant. Users describe their trip in natural language, and the
+assistant analyzes the origin and destination, compares the **cost** and **time** of
+multiple travel modes (flight, high-speed rail, driving, coach, etc.), and offers
+several alternative plans.
 
-## 项目结构
+## Project Structure
 
 ```
 Drive-Ride-AI/
-├── ios/    # iOS App（SwiftUI，面向最新 iOS，ChatBot 风格 UI）— 当前主力开发
-└── web/    # Web 端（规划中，占位）
+├── ios/    # iOS App (SwiftUI, targets the latest iOS, ChatBot-style UI) — primary focus
+└── web/    # Web client (planned, placeholder)
 ```
 
-## 平台
+## Platforms
 
-- **iOS App**：SwiftUI 构建的聊天机器人式应用，输入需求即可获得多种出行方案对比。详见 [`ios/README.md`](ios/README.md)。
-- **Web 端**：后续开发，目前为占位目录。详见 [`web/README.md`](web/README.md)。
+- **iOS App**: A SwiftUI chatbot-style app. Describe your needs and get a comparison of
+  travel plans. See [`ios/README.md`](ios/README.md).
+- **Web**: Planned for later; currently a placeholder directory. See [`web/README.md`](web/README.md).
 
-## 核心能力
+## Core Capabilities
 
-1. 自然语言理解出行需求（出发地、目的地、预算、出发时间、偏好）。
-2. 多出行方式建模：成本、耗时、舒适度、碳排放等维度对比。
-3. 生成多套方案（如「最省钱」「最快」「最舒适」）并以卡片形式展示。
-4. 规划引擎可离线运行（内置启发式估算），也可接入大语言模型 / 真实票价 API。
+1. Natural-language understanding of travel needs (origin, destination, budget, departure time, preferences).
+2. Multi-mode modeling: compares cost, duration, comfort, and carbon emissions.
+3. Generates multiple plans (e.g. "Cheapest", "Fastest", "Most comfortable") shown as cards.
+4. The planning engine runs offline (built-in heuristic estimation) and can optionally be
+   augmented with a large language model / real-time fare APIs.
