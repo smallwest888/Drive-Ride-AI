@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// 单个出行方案卡片。
+/// 单套出行方案卡片：总览指标 + 分段明细 + 点评。
 struct PlanCardView: View {
-    let plan: TravelPlan
+    let plan: CommutePlan
     let rank: Int
 
     var body: some View {
@@ -10,6 +10,7 @@ struct PlanCardView: View {
             header
             Divider()
             metrics
+            segmentBreakdown
             Text(plan.summary)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -29,22 +30,18 @@ struct PlanCardView: View {
     private var header: some View {
         HStack(spacing: 10) {
             ZStack {
-                Circle()
-                    .fill(plan.mode.tint.opacity(0.15))
-                    .frame(width: 38, height: 38)
+                Circle().fill(plan.mode.tint.opacity(0.15)).frame(width: 38, height: 38)
                 Image(systemName: plan.mode.systemImage)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(plan.mode.tint)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(plan.mode.displayName)
-                    .font(.headline)
+                Text(plan.mode.displayName).font(.headline)
                 if rank == 1 {
                     Text("推荐")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(plan.mode.tint))
                 }
             }
@@ -53,8 +50,7 @@ struct PlanCardView: View {
                 Text(highlight)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(plan.mode.tint)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Capsule().fill(plan.mode.tint.opacity(0.12)))
             }
         }
@@ -62,11 +58,11 @@ struct PlanCardView: View {
 
     private var metrics: some View {
         HStack(spacing: 0) {
-            metric(title: "费用", value: plan.costText, icon: "yensign.circle.fill", color: .green)
+            metric(title: "总费用", value: plan.costText, icon: "yensign.circle.fill", color: .green)
             divider
-            metric(title: "耗时", value: plan.durationText, icon: "clock.fill", color: .blue)
+            metric(title: "总耗时", value: plan.durationText, icon: "clock.fill", color: .blue)
             divider
-            metric(title: "舒适", value: String(format: "%.1f", plan.comfortScore), icon: "star.fill", color: .orange)
+            metric(title: "碳排放", value: plan.carbonText, icon: "leaf.fill", color: .mint)
         }
     }
 
@@ -81,29 +77,67 @@ struct PlanCardView: View {
             Text(value)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.6)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
     }
 
     private var divider: some View {
-        Rectangle()
-            .fill(Color(.separator).opacity(0.5))
-            .frame(width: 1, height: 28)
+        Rectangle().fill(Color(.separator).opacity(0.5)).frame(width: 1, height: 28)
+    }
+
+    private var segmentBreakdown: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(plan.segments) { segment in
+                HStack(spacing: 10) {
+                    Image(systemName: segment.mode.systemImage)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(plan.mode.tint)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(segment.detail)
+                            .font(.footnote)
+                            .foregroundStyle(.primary)
+                        if segment.distanceKm > 0 {
+                            Text(String(format: "%.1f km · %@", segment.distanceKm, segment.durationText))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(segment.durationText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Text(segment.costText)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(segment.cost <= 0.01 ? .secondary : .primary)
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.tertiarySystemBackground))
+        )
     }
 }
 
 #Preview {
     PlanCardView(
-        plan: TravelPlan(
-            mode: .highSpeedRail,
-            cost: 553,
-            durationHours: 5.3,
-            comfortScore: 4.5,
-            carbonKg: 46.2,
-            highlight: "最快",
-            summary: "市中心直达、准点率高，中长途性价比之选。"
+        plan: CommutePlan(
+            mode: .parkAndRide,
+            segments: [
+                PlanSegment(mode: .drive, detail: "驾车至「城郊地铁 P+R 停车场」", distanceKm: 12, durationHours: 0.25, cost: 7),
+                PlanSegment(mode: .park, detail: "停车换乘（地铁直达市中心）", distanceKm: 0, durationHours: 0.07, cost: 10),
+                PlanSegment(mode: .subway, detail: "公共交通进城", distanceKm: 8, durationHours: 0.56, cost: 4)
+            ],
+            cost: 21,
+            durationHours: 0.88,
+            carbonKg: 2.3,
+            highlight: "最省钱",
+            summary: "避开市区拥堵与高价停车，通勤推荐。"
         ),
         rank: 1
     )

@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// 一条聊天消息（含可能的方案卡片）。
+/// 一条聊天消息（含可能的方案卡片与快捷追问选项）。
 struct MessageBubbleView: View {
     let message: ChatMessage
+    var onQuickReply: (String) -> Void = { _ in }
 
     var body: some View {
         if message.role == .user {
@@ -11,8 +12,6 @@ struct MessageBubbleView: View {
             assistantBubble
         }
     }
-
-    // MARK: - 用户消息（右对齐，强调色气泡）
 
     private var userBubble: some View {
         HStack {
@@ -28,8 +27,6 @@ struct MessageBubbleView: View {
                 )
         }
     }
-
-    // MARK: - 助手消息（左对齐，含头像与方案卡片）
 
     private var assistantBubble: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -50,10 +47,11 @@ struct MessageBubbleView: View {
                             )
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if !message.plans.isEmpty {
-                        ForEach(Array(message.plans.enumerated()), id: \.element.id) { index, plan in
-                            PlanCardView(plan: plan, rank: index + 1)
-                        }
+                    ForEach(Array(message.plans.enumerated()), id: \.element.id) { index, plan in
+                        PlanCardView(plan: plan, rank: index + 1)
+                    }
+                    if !message.quickReplies.isEmpty {
+                        quickReplies
                     }
                 }
             }
@@ -61,15 +59,27 @@ struct MessageBubbleView: View {
         }
     }
 
+    private var quickReplies: some View {
+        FlexibleChips(items: message.quickReplies) { reply in
+            Button {
+                onQuickReply(reply)
+            } label: {
+                Text(reply)
+                    .font(.footnote.weight(.medium))
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private var avatar: some View {
         ZStack {
             Circle()
                 .fill(
-                    LinearGradient(
-                        colors: [Color.accentColor, Color.accentColor.opacity(0.6)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                    LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.6)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
                 .frame(width: 30, height: 30)
             Image(systemName: "sparkles")
@@ -79,17 +89,39 @@ struct MessageBubbleView: View {
     }
 }
 
+/// 简单的自动换行标签容器。
+struct FlexibleChips<Content: View>: View {
+    let items: [String]
+    let content: (String) -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(rows(), id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(row, id: \.self) { item in
+                        content(item)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 每行最多放 2 个，避免超宽。
+    private func rows() -> [[String]] {
+        stride(from: 0, to: items.count, by: 2).map { start in
+            Array(items[start..<min(start + 2, items.count)])
+        }
+    }
+}
+
 #Preview {
     ScrollView {
         VStack(spacing: 16) {
-            MessageBubbleView(message: ChatMessage(role: .user, text: "我想从北京去上海，预算有限"))
+            MessageBubbleView(message: ChatMessage(role: .user, text: "家 → 公司　·　有点赶"))
             MessageBubbleView(message: ChatMessage(
                 role: .assistant,
-                text: "已为你分析北京 → 上海，下面是几种方案 👇",
-                plans: [
-                    TravelPlan(mode: .highSpeedRail, cost: 553, durationHours: 5.3, comfortScore: 4.5, carbonKg: 46, highlight: "推荐", summary: "市中心直达，准点率高。"),
-                    TravelPlan(mode: .train, cost: 253, durationHours: 12, comfortScore: 3, carbonKg: 69, highlight: "最省钱", summary: "票价最低，适合预算紧。")
-                ]
+                text: "我已记录行程。方便告诉我大致距离吗？",
+                quickReplies: ["约 5 公里", "约 15 公里", "约 30 公里", "约 50 公里"]
             ))
             MessageBubbleView(message: ChatMessage(role: .assistant, text: "", isTyping: true))
         }

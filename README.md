@@ -1,9 +1,10 @@
-# Drive-Ride-AI · AI Travel Assistant
+# Drive-Ride-AI · Drive&Ride AI Assistant
 
-An AI-powered travel assistant. Users describe their trip in natural language, and the
-assistant analyzes the origin and destination, compares the **cost** and **time** of
-multiple travel modes (flight, high-speed rail, driving, coach, etc.), and offers
-several alternative plans.
+An AI-powered **Drive&Ride** commute assistant centered on **Park & Ride (P+R) + public
+transit**. Users set up a travel profile (car model / energy, transit card), enter origin
+and destination, and add free-form needs. An agent resolves the trip, infers urgency,
+compares the **cost** and **time** of public transit / full driving / P+R hybrid, and
+offers several plans — asking follow-up questions when information is missing.
 
 ## Project Structure
 
@@ -21,8 +22,11 @@ Drive-Ride-AI/
 
 ## Core Capabilities
 
-1. Natural-language understanding of travel needs (origin, destination, budget, departure time, preferences).
-2. Multi-mode modeling: compares cost, duration, comfort, and carbon emissions.
-3. Generates multiple plans (e.g. "Cheapest", "Fastest", "Most comfortable") shown as cards.
-4. The planning engine runs offline (built-in heuristic estimation) and can optionally be
-   augmented with a large language model / real-time fare APIs.
+1. **Travel profile**: car model / fuel type / consumption / energy price and transit card,
+   used for accurate cost estimation (persisted on device).
+2. **Agent flow**: resolve origin & destination → infer urgency from the description →
+   decide mode (transit / car / P+R) → compute total cost & time → return several plans.
+3. **Park & Ride first**: models driving to a city-edge P+R lot then taking transit, to
+   avoid congestion and expensive downtown parking.
+4. **Proactive follow-ups**: asks for missing origin/destination or distance via quick replies.
+5. Plans tagged "Cheapest / Fastest / Greenest", each with a per-segment cost/time breakdown.

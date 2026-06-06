@@ -1,8 +1,11 @@
 # Drive-Ride-AI · iOS App
 
-A SwiftUI AI travel assistant with a ChatBot-style interface. Users describe their trip in
-natural language; the app parses the origin/destination/preferences, compares the **cost**
-and **time** of multiple travel modes, and returns several plan cards.
+A SwiftUI **Drive&Ride** commute assistant focused on **Park & Ride (P+R) + public transit**.
+Users set up their travel profile (car model / energy, transit card), enter an origin and
+destination, and add free-form needs in a chat box. An agent then resolves the trip,
+infers urgency, decides the best mode (transit / car / P+R hybrid), computes total cost and
+time, and returns several plans — proactively asking follow-up questions when information
+is missing.
 
 ## Requirements
 
@@ -17,66 +20,69 @@ and **time** of multiple travel modes, and returns several plan cards.
 3. Press `Cmd + R`
 
 > The project uses Xcode 16's File System Synchronized Group format, so every `.swift`
-> file under `DriveRideAI/` is automatically included in the build — no manual reference
-> management needed.
+> file under `DriveRideAI/` is automatically included in the build.
 
-## Try It
+## How It Works (Agent Flow)
 
-Type your request in the input field, or tap a suggestion chip, for example:
+1. **Resolve the itinerary** — read the origin/destination fields, otherwise extract them
+   from the description.
+2. **Determine distance** — explicit distance in the text (e.g. "约 15 公里") takes priority,
+   otherwise estimate from built-in city data.
+3. **Analyze urgency** — classify the description as relaxed / normal / urgent.
+4. **Decide modes** — public transit always; full driving and P+R hybrid only when the
+   profile has a car (P+R requires a minimum distance to be worthwhile).
+5. **Compute cost & time** — per-segment breakdown using the user's car energy cost and
+   transit-card discount.
+6. **Return several plans** — tagged "Cheapest / Fastest / Greenest" and sorted by urgency
+   and preference.
+7. **Ask follow-ups** — when origin/destination or distance is missing, the assistant asks
+   with quick-reply chips.
 
-- "I want to go from Beijing to Shanghai, on a tight budget, leaving Friday"
-- "Chengdu to Chongqing, two people, want to get there fast"
-- "Hangzhou to Nanjing, the greenest option"
+## Travel Profile (Settings)
 
-(The built-in city data and parser are tuned for major Chinese cities and Chinese input.)
+Tap the gear in the top-right to configure:
+
+- **Car**: whether you have a car, preset models or custom, fuel type (gasoline / diesel /
+  electric / hybrid), consumption per 100 km, and energy unit price → drives fuel/electricity cost.
+- **Transit card**: none / stored-value / discount / monthly pass → drives transit fare.
+- **Default preference**: balanced / cheapest / fastest / greenest.
+
+Profile is persisted via `UserDefaults`.
 
 ## Architecture (MVVM)
 
 ```
 DriveRideAI/
-├── DriveRideAIApp.swift        # App entry point
-├── Models/                     # Data models
-│   ├── TravelMode.swift        # Travel modes + estimation params (speed / price / carbon…)
-│   ├── TripRequest.swift       # Parsed trip request and preferences
-│   ├── TravelPlan.swift        # A single plan (cost / time / comfort / carbon)
-│   └── ChatMessage.swift       # Chat message (may carry plan cards)
+├── DriveRideAIApp.swift          # App entry (injects ProfileStore)
+├── Models/
+│   ├── CarProfile.swift          # Car model, fuel type, consumption, energy cost
+│   ├── TransitCard.swift         # Transit card types and fare discounts
+│   ├── UserProfile.swift         # Car + transit card + default preference (Codable)
+│   ├── TripLocation.swift        # Origin / destination
+│   ├── CommutePlan.swift         # CommuteMode (transit/car/P+R), segments, urgency
+│   └── ChatMessage.swift         # Chat message (plans + quick replies)
 ├── Services/
-│   ├── RouteData.swift         # Built-in city coordinates + distance estimation (Haversine)
-│   ├── TripPlanning.swift      # Planning service protocol
-│   ├── LocalTripPlanner.swift  # Offline heuristic engine + natural-language parsing
-│   └── AITripPlanner.swift     # Optional LLM augmentation (OpenAI-compatible API)
+│   ├── RouteData.swift           # Built-in city coordinates + distance estimation
+│   ├── ParkRideData.swift        # Park & Ride lots
+│   └── CommutePlanner.swift      # The agent: resolve / urgency / cost+time / follow-ups
+├── Stores/
+│   └── ProfileStore.swift        # Persists UserProfile (UserDefaults)
 ├── ViewModels/
-│   └── ChatViewModel.swift     # Chat state management
+│   └── PlannerViewModel.swift    # Home state: fields, chat, planning
 └── Views/
-    ├── ChatView.swift          # Main screen
-    ├── MessageBubbleView.swift # Chat bubbles
-    ├── PlanCardView.swift      # Plan card
-    ├── InputBarView.swift      # Bottom input bar
+    ├── HomeView.swift            # Brand header + location fields + chat & plans
+    ├── LocationFieldView.swift   # Origin / destination input field
+    ├── ProfileView.swift         # Travel profile settings
+    ├── PlanCardView.swift        # Plan card with per-segment cost/time breakdown
+    ├── MessageBubbleView.swift   # Chat bubbles + quick-reply chips
+    ├── InputBarView.swift        # Bottom needs input bar
     └── TypingIndicatorView.swift
 ```
 
-## Planning Engine
-
-- **Offline by default**: `LocalTripPlanner` parses the request, estimates distance, and
-  computes the cost and time for each travel mode locally. It tags plans as "Fastest /
-  Cheapest / Most comfortable / Greenest" and sorts them by the user's preference. No
-  network or API key required.
-- **Optional LLM augmentation**: `AITripPlanner` uses an LLM to write a more natural
-  recommendation on top of the structured plans. The structured data is always computed
-  locally, so results stay reliable and never fabricated.
-
-### Connecting an LLM (optional)
-
-Set any of the following to enable it (falls back to the local narrative if unset):
-
-- Environment variables: `OPENAI_API_KEY`, `OPENAI_BASE_URL` (defaults to OpenAI),
-  `OPENAI_MODEL` (defaults to `gpt-4o-mini`)
-- Or add the corresponding keys to the app's Info configuration
-
-> Note: Never commit a real API key. `.gitignore` already excludes `Secrets.plist` and `.env`.
-
 ## Notes
 
-- City distances and per-mode cost/time are **engineering estimates** used for comparison
-  demos. After integrating real fare / map APIs, replace the estimation logic in
-  `RouteData` and `LocalTripPlanner` for more accurate results.
+- City distances, P+R lots, parking fees, fares and per-mode time are **engineering
+  estimates** for comparison demos. Integrate real map / fare / POI APIs and replace the
+  logic in `RouteData`, `ParkRideData`, and `CommutePlanner` for production accuracy.
+- For arbitrary street addresses (no offline geocoder), the agent asks for an approximate
+  distance — or you can type it in the description.
