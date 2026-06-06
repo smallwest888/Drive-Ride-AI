@@ -1,0 +1,19 @@
+{
+  "id": "drive-ride-agent",
+  "name": "Drive Ride Agent",
+  "description": "Travel planning tools for the Drive&Ride OpenClaw gateway.",
+  "entry": "./dist/index.js",
+  "contracts": {
+    "tools": ["drive_ride_plan_trip"]
+  },
+  "toolMetadata": {
+    "drive_ride_plan_trip": {
+      "optional": false
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": true
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "gateway": {
+    "mode": "local",
+    "port": 18789,
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "drive-ride-openclaw-local-token"
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "plugins": {
+    "enabled": true,
+    "load": {
+      "paths": [
+        "C:\\Users\\ZHOU\\Downloads\\CityDrive-Ride-main\\openclaw-drive-ride-plugin"
+      ]
+    },
+    "entries": {
+      "drive-ride-agent": {
+        "enabled": true
+      }
+    }
+  },
+  "tools": {
+    "profile": "minimal",
+    "alsoAllow": [
+      "drive_ride_plan_trip"
+    ]
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "qwen/qwen3.5-plus"
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "qwen": {
+        "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "apiKey": "${QWEN_API_KEY}"
+      }
+    }
+  }
+}
