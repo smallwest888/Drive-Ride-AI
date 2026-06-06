@@ -29,6 +29,8 @@ struct PlanningOutcome {
 struct CommutePlanner {
 
     private let routeService = RouteService()
+    /// 后台 AI（可选，OpenAI / Qwen），仅用于润色文案。
+    private let ai = AIService()
     /// 价格来源：优先联网 / API（方案 B，预留），取不到回落到用户填写的真实价格（方案 A）。
     private let pricing: PricingProvider = ChainedPricingProvider(
         primary: RemotePricingProvider(),
@@ -100,9 +102,15 @@ struct CommutePlanner {
         annotateHighlights(&plans)
         plans = sort(plans, urgency: urgency, preference: input.profile.preference)
 
-        let text = composeNarrative(origin: origin, destination: destination,
+        var text = composeNarrative(origin: origin, destination: destination,
                                     driving: driving, urgency: urgency,
                                     profile: input.profile, plans: plans)
+
+        // 可选：后台 AI 仅润色文案（保留全部真实数字），未启用 / 失败则用本地文案。
+        if let aiSettings = input.profile.ai, aiSettings.isUsable,
+           let polished = await ai.polish(text: text, lang: AppLocale.shared.lang, settings: aiSettings) {
+            text = polished
+        }
 
         return PlanningOutcome(assistantText: text, plans: plans, quickReplies: [],
                                resolvedOrigin: origin.name, resolvedDestination: destination.name)

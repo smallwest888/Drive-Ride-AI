@@ -17,6 +17,7 @@ struct ProfileView: View {
                 transitSection
                 priceSection
                 preferenceSection
+                aiSection
                 costPreviewSection
             }
             .navigationTitle(tr("出行信息", "Travel Settings"))
@@ -175,6 +176,50 @@ struct ProfileView: View {
         } footer: {
             Text(tr("当某次行程没有明显紧急程度时，按此偏好排序方案。",
                     "When a trip has no clear urgency, plans are sorted by this preference."))
+        }
+    }
+
+    // MARK: - 后台 AI（可选）
+
+    private var aiBinding: Binding<AISettings> {
+        Binding(
+            get: { profileStore.profile.ai ?? .disabled },
+            set: { profileStore.profile.ai = $0 }
+        )
+    }
+
+    @ViewBuilder
+    private var aiSection: some View {
+        Section {
+            Toggle(tr("启用 AI 文案润色", "Enable AI wording"), isOn: aiBinding.enabled)
+
+            if aiBinding.wrappedValue.enabled {
+                Picker(tr("服务商", "Provider"), selection: aiBinding.provider) {
+                    ForEach(AIProvider.allCases) { p in
+                        Text(p.displayName).tag(p)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                SecureField("API Key", text: aiBinding.apiKey)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                HStack {
+                    Text(tr("模型", "Model"))
+                    Spacer()
+                    TextField(aiBinding.wrappedValue.provider.defaultModel, text: aiBinding.customModel)
+                        .multilineTextAlignment(.trailing)
+                        .foregroundStyle(.secondary)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+            }
+        } header: {
+            Text(tr("后台 AI（可选）", "Backend AI (optional)"))
+        } footer: {
+            Text(tr("可选接入 OpenAI 或 Qwen（通义千问），仅用于把方案文案润色得更自然——不会改动真实的距离、时间和价格。API Key 仅保存在本机，默认关闭。",
+                    "Optionally connect OpenAI or Qwen — used only to polish the wording of plans; it never changes the real distance, time, or price. The API key is stored on-device only. Off by default."))
         }
     }
 

@@ -38,6 +38,9 @@ struct UserProfile: Codable, Equatable {
     /// P+R 换乘停车场停车费（元，真实值）。nil = 未填。
     var parkRideParkingFee: Double?
 
+    /// 后台 AI 设置（可选，默认关闭）。nil = 未配置。
+    var ai: AISettings?
+
     static let `default` = UserProfile(
         hasCar: true,
         car: .default,
