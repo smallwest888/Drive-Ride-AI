@@ -11,6 +11,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     private let manager = CLLocationManager()
     private let geocoder = CLGeocoder()
     private var continuation: CheckedContinuation<ResolvedPlace?, Never>?
+    private var timeoutTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -24,8 +25,8 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
         let status = manager.authorizationStatus
         if status == .denied || status == .restricted {
-            errorMessage = tr("定位权限未开启，请在系统设置中允许。",
-                              "Location access is off — enable it in Settings.")
+            errorMessage = tr("定位权限未开启，请在系统设置 → 隐私 → 定位服务中允许本 App。",
+                              "Location access is off — enable it in Settings › Privacy › Location.")
             return nil
         }
 
@@ -34,8 +35,9 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
         return await withCheckedContinuation { (cont: CheckedContinuation<ResolvedPlace?, Never>) in
             self.continuation = cont
+            self.startTimeout()
             if status == .authorizedWhenInUse || status == .authorizedAlways {
-                self.manager.requestLocation()
+                self.beginUpdating()
             } else {
                 // 未决定：弹出授权，等 didChangeAuthorization 回调后再取位置。
                 self.manager.requestWhenInUseAuthorization()
@@ -43,7 +45,29 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         }
     }
 
+    private func beginUpdating() {
+        // startUpdatingLocation 比 requestLocation 在刚授权时更稳定，取到第一个点后即停止。
+        manager.startUpdatingLocation()
+    }
+
+    /// 超时保护：避免迟迟取不到点时一直转圈。
+    private func startTimeout() {
+        timeoutTask?.cancel()
+        timeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15 * 1_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            if self.continuation != nil {
+                self.errorMessage = tr("定位超时，请到空旷处或检查定位服务后重试。",
+                                       "Locating timed out — try again with a clearer sky view or check Location Services.")
+                self.finish(nil)
+            }
+        }
+    }
+
     private func finish(_ place: ResolvedPlace?) {
+        manager.stopUpdatingLocation()
+        timeoutTask?.cancel()
+        timeoutTask = nil
         isResolving = false
         continuation?.resume(returning: place)
         continuation = nil
@@ -52,16 +76,19 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     // MARK: - CLLocationManagerDelegate
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else {
-            Task { @MainActor in self.finish(nil) }
-            return
+        guard let location = locations.last else { return }
+        Task { @MainActor in
+            // 已经结束（超时/已取到）则忽略后续更新。
+            guard self.continuation != nil else { return }
+            await self.reverseGeocode(location)
         }
-        Task { @MainActor in await self.reverseGeocode(location) }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in
-            self.errorMessage = tr("无法获取当前位置。", "Couldn't get your current location.")
+            guard self.continuation != nil else { return }
+            self.errorMessage = tr("无法获取当前位置，请确认定位服务已开启后重试。",
+                                   "Couldn't get your current location — make sure Location Services are on, then retry.")
             self.finish(nil)
         }
     }
@@ -70,10 +97,10 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         let status = manager.authorizationStatus
         Task { @MainActor in
             if (status == .authorizedWhenInUse || status == .authorizedAlways), self.isResolving, self.continuation != nil {
-                manager.requestLocation()
+                self.beginUpdating()
             } else if status == .denied || status == .restricted, self.isResolving {
-                self.errorMessage = tr("定位权限未开启，请在系统设置中允许。",
-                                       "Location access is off — enable it in Settings.")
+                self.errorMessage = tr("定位权限未开启，请在系统设置 → 隐私 → 定位服务中允许本 App。",
+                                       "Location access is off — enable it in Settings › Privacy › Location.")
                 self.finish(nil)
             }
         }
@@ -92,11 +119,18 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
             return tr("当前位置", "Current location")
         }()
 
-        let mkPlacemark = MKPlacemark(coordinate: coordinate)
+        // 用反查到的真实地标构造 MKPlacemark，保留国家/地址信息（用于货币、导航）。
+        let mkPlacemark: MKPlacemark
+        if let pm = placemark {
+            mkPlacemark = MKPlacemark(placemark: pm)
+        } else {
+            mkPlacemark = MKPlacemark(coordinate: coordinate)
+        }
         let item = MKMapItem(placemark: mkPlacemark)
         item.name = name
 
-        let subtitle = LocationSearchService.subtitle(for: item)
+        let subtitle = placemark.map { LocationSearchService.subtitle(for: MKMapItem(placemark: MKPlacemark(placemark: $0))) ?? "" }
+            .flatMap { $0.isEmpty ? nil : $0 }
             ?? tr("我的位置", "My location")
 
         finish(ResolvedPlace(name: name, subtitle: subtitle, coordinate: coordinate, mapItem: item))

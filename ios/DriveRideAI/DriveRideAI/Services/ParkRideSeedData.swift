@@ -49,8 +49,62 @@ id,name,address,latitude,longitude,totalSpaces,pricePerHour,city,facilities,publ
 
 /// 简易 CSV 解析（支持双引号包裹的含逗号字段）。
 enum ParkRideCSVParser {
+    static func parseInfo(_ csv: String) -> [ParkRideLotInfo] {
+        parseRows(csv).filter(\.isActive).map {
+            ParkRideLotInfo(id: $0.id,
+                            name: $0.name,
+                            address: $0.address,
+                            latitude: $0.latitude,
+                            longitude: $0.longitude,
+                            totalSpaces: $0.totalSpaces,
+                            pricePerHour: $0.pricePerHour,
+                            publicTransport: $0.publicTransport,
+                            notes: $0.notes)
+        }
+    }
+
     static func parse(_ csv: String) -> [ParkRideLot] {
-        var result: [ParkRideLot] = []
+        parseRows(csv).map {
+            ParkRideLot(remoteID: $0.id,
+                        name: $0.name,
+                        address: $0.address,
+                        latitude: $0.latitude,
+                        longitude: $0.longitude,
+                        totalSpaces: $0.totalSpaces,
+                        pricePerHour: $0.pricePerHour,
+                        city: $0.city,
+                        facilities: $0.facilities,
+                        publicTransport: $0.publicTransport,
+                        operatingHours: $0.operatingHours,
+                        contactPhone: $0.contactPhone,
+                        notes: $0.notes,
+                        isActive: $0.isActive,
+                        createdAt: $0.createdAt,
+                        updatedAt: $0.updatedAt)
+        }
+    }
+
+    private struct Row {
+        let id: Int
+        let name: String
+        let address: String
+        let latitude: Double
+        let longitude: Double
+        let totalSpaces: Int
+        let pricePerHour: Double?
+        let city: String
+        let facilities: String
+        let publicTransport: String
+        let operatingHours: String
+        let contactPhone: String
+        let notes: String
+        let isActive: Bool
+        let createdAt: String
+        let updatedAt: String
+    }
+
+    private static func parseRows(_ csv: String) -> [Row] {
+        var result: [Row] = []
         let lines = csv.split(whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
         for (index, rawLine) in lines.enumerated() {
             if index == 0 { continue } // 跳过表头
@@ -62,24 +116,22 @@ enum ParkRideCSVParser {
             let priceField = f[6].trimmingCharacters(in: .whitespaces)
             let price = priceField.isEmpty ? nil : Double(priceField)
 
-            result.append(ParkRideLot(
-                remoteID: id,
-                name: f[1],
-                address: f[2],
-                latitude: Double(f[3]) ?? 0,
-                longitude: Double(f[4]) ?? 0,
-                totalSpaces: Int(f[5]) ?? 0,
-                pricePerHour: price,
-                city: f[7],
-                facilities: f[8],
-                publicTransport: f[9],
-                operatingHours: f[10],
-                contactPhone: f[11],
-                notes: f[12],
-                isActive: f[13] == "1",
-                createdAt: f.count > 14 ? f[14] : "",
-                updatedAt: f.count > 15 ? f[15] : ""
-            ))
+            result.append(Row(id: id,
+                              name: f[1],
+                              address: f[2],
+                              latitude: Double(f[3]) ?? 0,
+                              longitude: Double(f[4]) ?? 0,
+                              totalSpaces: Int(f[5]) ?? 0,
+                              pricePerHour: price,
+                              city: f[7],
+                              facilities: f[8],
+                              publicTransport: f[9],
+                              operatingHours: f[10],
+                              contactPhone: f[11],
+                              notes: f[12],
+                              isActive: f[13] == "1",
+                              createdAt: f.count > 14 ? f[14] : "",
+                              updatedAt: f.count > 15 ? f[15] : ""))
         }
         return result
     }

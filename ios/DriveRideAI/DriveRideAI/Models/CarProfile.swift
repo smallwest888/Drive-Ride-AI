@@ -1,7 +1,7 @@
 import Foundation
 
 /// 燃料类型，决定能耗单位与默认单价。
-enum FuelType: String, Codable, CaseIterable, Identifiable {
+enum FuelType: String, Codable, CaseIterable, Identifiable, Sendable {
     case gasoline   // 汽油
     case diesel     // 柴油
     case electric   // 纯电
@@ -46,7 +46,7 @@ enum FuelType: String, Codable, CaseIterable, Identifiable {
 }
 
 /// 用户车辆信息，用于自驾 / P+R 的油电成本计算。
-struct CarProfile: Codable, Equatable, Identifiable {
+struct CarProfile: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     /// 车型名称，如「Toyota Corolla」。
     var name: String
@@ -55,17 +55,21 @@ struct CarProfile: Codable, Equatable, Identifiable {
     var consumptionPer100km: Double
     /// 能源单价（元 / L 或 元 / kWh）。若为 nil 则取燃料默认值。
     var unitPrice: Double?
+    /// 车辆 CO2 排放（g/km）。若用户填写，则规划时直接使用，避免每次联网搜索。
+    var co2GramsPerKm: Double?
 
     init(id: UUID = UUID(),
          name: String,
          fuelType: FuelType,
          consumptionPer100km: Double,
-         unitPrice: Double? = nil) {
+         unitPrice: Double? = nil,
+         co2GramsPerKm: Double? = nil) {
         self.id = id
         self.name = name
         self.fuelType = fuelType
         self.consumptionPer100km = consumptionPer100km
         self.unitPrice = unitPrice
+        self.co2GramsPerKm = co2GramsPerKm
     }
 
     var effectiveUnitPrice: Double {
@@ -83,6 +87,10 @@ struct CarProfile: Codable, Equatable, Identifiable {
         return "\(formatted) \(fuelType.consumptionUnit)"
     }
 
+    var isConfigured: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// 常见车型预设，供用户在设置页快速选择。
     static let presets: [CarProfile] = [
         CarProfile(name: "Toyota Corolla 卡罗拉", fuelType: .gasoline, consumptionPer100km: 6.0),
@@ -93,5 +101,5 @@ struct CarProfile: Codable, Equatable, Identifiable {
         CarProfile(name: "BYD 海豚（纯电）", fuelType: .electric, consumptionPer100km: 12.0)
     ]
 
-    static let `default` = presets[0]
+    static let `default` = CarProfile(name: "", fuelType: .gasoline, consumptionPer100km: 6.5)
 }

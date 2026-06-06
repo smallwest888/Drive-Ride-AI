@@ -4,6 +4,7 @@ import SwiftUI
 struct MessageBubbleView: View {
     let message: ChatMessage
     var onQuickReply: (String) -> Void = { _ in }
+    var onAction: (MessageAction) -> Void = { _ in }
 
     var body: some View {
         if message.role == .user {
@@ -33,6 +34,11 @@ struct MessageBubbleView: View {
             avatar
             VStack(alignment: .leading, spacing: 10) {
                 if message.isTyping {
+                    if !message.text.isEmpty {
+                        Text(message.text)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     TypingIndicatorView()
                 } else {
                     if !message.text.isEmpty {
@@ -53,9 +59,29 @@ struct MessageBubbleView: View {
                     if !message.quickReplies.isEmpty {
                         quickReplies
                     }
+                    if !message.actions.isEmpty {
+                        actionButtons
+                    }
                 }
             }
             Spacer(minLength: 16)
+        }
+    }
+
+    private var actionButtons: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(message.actions) { action in
+                Button {
+                    onAction(action)
+                } label: {
+                    Text(action.title)
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Capsule().fill(Color.accentColor))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 

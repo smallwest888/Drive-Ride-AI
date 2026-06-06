@@ -1,5 +1,13 @@
 import Foundation
 
+/// 助手消息上可点击的功能按钮（区别于「快捷回复」，点击触发特定能力而非重新规划）。
+struct MessageAction: Identifiable, Equatable {
+    enum Kind: String { case transitCardAdvice }
+    let id = UUID()
+    let title: String
+    let kind: Kind
+}
+
 /// 聊天消息。可以是纯文本，也可以携带一组出行方案卡片，或一组建议追问的快捷选项。
 struct ChatMessage: Identifiable, Equatable {
     enum Role: Equatable {
@@ -14,6 +22,8 @@ struct ChatMessage: Identifiable, Equatable {
     var plans: [CommutePlan]
     /// 助手追问时给出的快捷回复选项（点击即发送）。
     var quickReplies: [String]
+    /// 助手消息上的功能按钮（如「联网查交通卡」）。
+    var actions: [MessageAction]
     /// 用于「正在输入」动画的占位消息。
     var isTyping: Bool
     let timestamp: Date
@@ -22,12 +32,14 @@ struct ChatMessage: Identifiable, Equatable {
          text: String,
          plans: [CommutePlan] = [],
          quickReplies: [String] = [],
+         actions: [MessageAction] = [],
          isTyping: Bool = false,
          timestamp: Date = Date()) {
         self.role = role
         self.text = text
         self.plans = plans
         self.quickReplies = quickReplies
+        self.actions = actions
         self.isTyping = isTyping
         self.timestamp = timestamp
     }
@@ -37,6 +49,7 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.text == rhs.text &&
         lhs.isTyping == rhs.isTyping &&
         lhs.plans == rhs.plans &&
-        lhs.quickReplies == rhs.quickReplies
+        lhs.quickReplies == rhs.quickReplies &&
+        lhs.actions == rhs.actions
     }
 }

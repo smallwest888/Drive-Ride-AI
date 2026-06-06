@@ -8,32 +8,42 @@ import Combine
 final class LocationSearchService: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
     @Published private(set) var suggestions: [MKLocalSearchCompletion] = []
 
-    private let completer = MKLocalSearchCompleter()
+    private var completer: MKLocalSearchCompleter?
+    private var debounceTask: Task<Void, Never>?
     /// 选中某条建议后，短暂忽略下一次输入回调，避免再次弹出列表。
     private var suppressNextUpdate = false
 
-    override init() {
-        super.init()
-        completer.delegate = self
-        completer.resultTypes = [.address, .pointOfInterest]
+    private func lazyCompleter() -> MKLocalSearchCompleter {
+        if let completer { return completer }
+        let c = MKLocalSearchCompleter()
+        c.delegate = self
+        c.resultTypes = [.address, .pointOfInterest]
+        completer = c
+        return c
     }
 
     /// 随用户输入更新查询。
     func update(query: String) {
+        debounceTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             suggestions = []
-            completer.queryFragment = ""
+            completer?.queryFragment = ""
             return
         }
         if suppressNextUpdate {
             suppressNextUpdate = false
             return
         }
-        completer.queryFragment = trimmed
+        debounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            lazyCompleter().queryFragment = trimmed
+        }
     }
 
     func clear() {
+        debounceTask?.cancel()
         suggestions = []
         suppressNextUpdate = true
     }

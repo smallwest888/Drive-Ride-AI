@@ -14,6 +14,11 @@ struct PRCandidate {
     var estimatedTotalMinutes: Double {
         estimatedDriveMinutes + estimatedTransitMinutes
     }
+
+    /// P+R 候选排序分：更重视停车场到目的地的公共交通段短，避免选到离目的地很远的停车场。
+    var parkRideScore: Double {
+        estimatedTotalMinutes + estimatedTransitMinutes * 0.8
+    }
 }
 
 /// P+R 时间预估管理器。
@@ -47,13 +52,13 @@ enum TimeEstimationManager {
                            estimatedTransitMinutes: transitMinutes)
     }
 
-    /// 对一批停车场做本地预估并按总时间从小到大排序。
+    /// 对一批停车场做本地预估，并按更适合 P+R 的综合分排序。
     static func rankedCandidates(origin: CLLocationCoordinate2D,
                                  destination: CLLocationCoordinate2D,
                                  lots: [MKMapItem]) -> [PRCandidate] {
         lots
             .map { estimate(origin: origin, destination: destination, lot: $0) }
-            .sorted { $0.estimatedTotalMinutes < $1.estimatedTotalMinutes }
+            .sorted { $0.parkRideScore < $1.parkRideScore }
     }
 
     /// 两坐标间直线距离（km）。

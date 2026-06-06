@@ -6,6 +6,9 @@ struct RouteLeg {
     let distanceKm: Double
     let travelTime: TimeInterval   // 秒
     let polyline: MKPolyline?
+    let usesDetailedRoute: Bool
+    let stepCount: Int
+    let expectedDepartureDate: Date?
 
     var travelHours: Double { travelTime / 3600.0 }
 }
@@ -28,15 +31,40 @@ struct RouteService {
             guard let route = response.routes.first else { return nil }
             return RouteLeg(distanceKm: route.distance / 1000.0,
                             travelTime: route.expectedTravelTime,
-                            polyline: route.polyline)
+                            polyline: route.polyline,
+                            usesDetailedRoute: true,
+                            stepCount: route.steps.count,
+                            expectedDepartureDate: nil)
         } catch {
             return nil
         }
     }
 
-    /// 公共交通 ETA（MapKit 不返回公交路线几何，只给时长与距离）。
+    /// 公共交通路线。优先取完整 MKRoute；部分地区 MapKit 不返回公交路线时，回退到 ETA。
     func transitETA(from source: CLLocationCoordinate2D,
                     to destination: CLLocationCoordinate2D) async -> RouteLeg? {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = .transit
+
+        let directions = MKDirections(request: request)
+        do {
+            let response = try await directions.calculate()
+            guard let route = response.routes.first else { return nil }
+            return RouteLeg(distanceKm: route.distance / 1000.0,
+                            travelTime: route.expectedTravelTime,
+                            polyline: route.polyline,
+                            usesDetailedRoute: true,
+                            stepCount: route.steps.count,
+                            expectedDepartureDate: nil)
+        } catch {
+            return await transitETAOnly(from: source, to: destination)
+        }
+    }
+
+    private func transitETAOnly(from source: CLLocationCoordinate2D,
+                                to destination: CLLocationCoordinate2D) async -> RouteLeg? {
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
@@ -47,7 +75,10 @@ struct RouteService {
             let eta = try await directions.calculateETA()
             return RouteLeg(distanceKm: eta.distance / 1000.0,
                             travelTime: eta.expectedTravelTime,
-                            polyline: nil)
+                            polyline: nil,
+                            usesDetailedRoute: false,
+                            stepCount: 0,
+                            expectedDepartureDate: eta.expectedDepartureDate)
         } catch {
             return nil
         }
@@ -64,8 +95,8 @@ struct RouteService {
             let request = MKLocalSearch.Request()
             request.naturalLanguageQuery = query
             request.region = MKCoordinateRegion(center: coordinate,
-                                                latitudinalMeters: radiusMeters * 2,
-                                                longitudinalMeters: radiusMeters * 2)
+                                                latitudinalMeters: radiusMeters,
+                                                longitudinalMeters: radiusMeters)
             if #available(iOS 18.0, *) {
                 request.regionPriority = .required
             }

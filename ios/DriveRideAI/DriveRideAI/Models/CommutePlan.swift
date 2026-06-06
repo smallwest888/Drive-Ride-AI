@@ -112,6 +112,8 @@ struct PlanSegment: Identifiable, Equatable {
     let cost: Double
     /// 目的地货币代码（如 "CNY"、"USD"）。
     var currencyCode: String = CurrencyFormat.deviceCurrencyCode
+    /// 可选出发时间（用于公共交通）。
+    var departureDate: Date?
 
     static func == (lhs: PlanSegment, rhs: PlanSegment) -> Bool { lhs.id == rhs.id }
 }
@@ -131,10 +133,12 @@ struct CommutePlan: Identifiable, Equatable {
     let summary: String
     /// 目的地货币代码（如 "CNY"、"USD"），价格按此显示。
     var currencyCode: String = CurrencyFormat.deviceCurrencyCode
-    /// 成本是否完整：若有票价 / 停车费未填，则为 false（总价为下限）。
+    /// 成本是否完整：若停车费联网未查到，则为 false（总价为下限）。
     var costIsComplete: Bool = true
     /// 可在 Apple 地图中发起的真实导航段。
     var navLegs: [NavLeg] = []
+    /// 可选的顺风车 / 拼车入口。
+    var rideshareURL: URL?
 
     /// 用于地图预览的所有路线几何。
     var polylines: [MKPolyline] {
@@ -156,12 +160,31 @@ struct CommutePlan: Identifiable, Equatable {
 }
 
 extension PlanSegment {
+    var showsCost: Bool {
+        switch mode {
+        case .bus, .subway:
+            return false
+        case .drive, .walk, .park:
+            return true
+        }
+    }
+
     var durationText: String {
         DurationFormat.text(hours: durationHours, minMinutes: 1)
     }
 
     var costText: String {
         cost <= 0.01 ? tr("免费", "Free") : CurrencyFormat.string(cost, code: currencyCode)
+    }
+
+    var transitTimeText: String {
+        guard let departureDate else { return durationText }
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return tr("\(durationText) · \(formatter.string(from: departureDate)) 出发",
+                  "\(durationText) · departs \(formatter.string(from: departureDate))")
     }
 }
 

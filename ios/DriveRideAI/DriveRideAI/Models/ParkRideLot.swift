@@ -50,7 +50,7 @@ final class ParkRideLot {
 }
 
 /// P+R 停车场的值快照（Sendable），供规划器跨并发使用。
-struct ParkRideLotInfo: Identifiable, Hashable {
+struct ParkRideLotInfo: Identifiable, Hashable, Sendable {
     let id: Int
     let name: String
     let address: String

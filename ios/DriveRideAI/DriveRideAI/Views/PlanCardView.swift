@@ -5,6 +5,7 @@ struct PlanCardView: View {
     let plan: CommutePlan
     let rank: Int
 
+    @Environment(\.openURL) private var openURL
     @State private var showRoute = false
 
     var body: some View {
@@ -17,7 +18,7 @@ struct PlanCardView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if !plan.navLegs.isEmpty { actionButtons }
+            if !plan.navLegs.isEmpty || plan.rideshareURL != nil { actionButtons }
         }
         .sheet(isPresented: $showRoute) {
             RoutePreviewView(plan: plan)
@@ -64,8 +65,10 @@ struct PlanCardView: View {
 
     private var metrics: some View {
         HStack(spacing: 0) {
-            metric(title: tr("总费用", "Cost"), value: plan.costText, icon: "yensign.circle.fill", color: .green)
-            divider
+            if plan.mode != .transit {
+                metric(title: tr("汽车/停车", "Drive/Park"), value: plan.costText, icon: "yensign.circle.fill", color: .green)
+                divider
+            }
             metric(title: tr("总耗时", "Time"), value: plan.durationText, icon: "clock.fill", color: .blue)
             divider
             metric(title: tr("碳排放", "CO₂"), value: plan.carbonText, icon: "leaf.fill", color: .mint)
@@ -94,30 +97,48 @@ struct PlanCardView: View {
     }
 
     private var actionButtons: some View {
-        HStack(spacing: 8) {
-            Button {
-                showRoute = true
-            } label: {
-                Label(tr("路线", "Route"), systemImage: "map.fill")
-                    .font(.footnote.weight(.semibold))
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(Capsule().fill(plan.mode.tint.opacity(0.12)))
-                    .foregroundStyle(plan.mode.tint)
-            }
-            .buttonStyle(.plain)
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                if !plan.navLegs.isEmpty {
+                    Button {
+                        showRoute = true
+                    } label: {
+                        Label(tr("路线", "Route"), systemImage: "map.fill")
+                            .font(.footnote.weight(.semibold))
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(Capsule().fill(plan.mode.tint.opacity(0.12)))
+                            .foregroundStyle(plan.mode.tint)
+                    }
+                    .buttonStyle(.plain)
 
-            Button {
-                plan.navLegs.first?.openInAppleMaps()
-            } label: {
-                Label(tr("导航", "Navigate"), systemImage: "location.north.line.fill")
-                    .font(.footnote.weight(.semibold))
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(Capsule().fill(plan.mode.tint))
-                    .foregroundStyle(.white)
+                    Button {
+                        plan.navLegs.first?.openInAppleMaps()
+                    } label: {
+                        Label(tr("导航", "Navigate"), systemImage: "location.north.line.fill")
+                            .font(.footnote.weight(.semibold))
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(Capsule().fill(plan.mode.tint))
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
+
+            if let url = plan.rideshareURL {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label("BlaBlaCar", systemImage: "person.2.fill")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(Capsule().fill(Color.teal.opacity(0.14)))
+                        .foregroundStyle(Color.teal)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -133,7 +154,11 @@ struct PlanCardView: View {
                         Text(segment.detail)
                             .font(.footnote)
                             .foregroundStyle(.primary)
-                        if segment.distanceKm > 0 {
+                        if plan.mode == .transit || segment.mode == .bus || segment.mode == .subway {
+                            Text(segment.transitTimeText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        } else if segment.distanceKm > 0 {
                             Text(String(format: "%.1f km · %@", segment.distanceKm, segment.durationText))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -144,9 +169,11 @@ struct PlanCardView: View {
                         }
                     }
                     Spacer()
-                    Text(segment.costText)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(segment.cost <= 0.01 ? .secondary : .primary)
+                    if segment.showsCost {
+                        Text(segment.costText)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(segment.cost <= 0.01 ? .secondary : .primary)
+                    }
                 }
             }
         }
@@ -164,14 +191,15 @@ struct PlanCardView: View {
             mode: .parkAndRide,
             segments: [
                 PlanSegment(mode: .drive, detail: "驾车至「城郊地铁 P+R 停车场」", distanceKm: 12, durationHours: 0.25, cost: 7),
-                PlanSegment(mode: .park, detail: "停车换乘（地铁直达市中心）", distanceKm: 0, durationHours: 0.07, cost: 10),
-                PlanSegment(mode: .subway, detail: "公共交通进城", distanceKm: 8, durationHours: 0.56, cost: 4)
+                PlanSegment(mode: .park, detail: "停车换乘", distanceKm: 0, durationHours: 0.07, cost: 10),
+                PlanSegment(mode: .subway, detail: "公共交通", distanceKm: 8, durationHours: 0.56, cost: 4, departureDate: Date())
             ],
             cost: 21,
             durationHours: 0.88,
             carbonKg: 2.3,
             highlight: "最省钱",
-            summary: "避开市区拥堵与高价停车，通勤推荐。"
+            summary: "避开市区拥堵与高价停车，通勤推荐。",
+            rideshareURL: URL(string: "https://www.blablacar.de/search-car-sharing")
         ),
         rank: 1
     )

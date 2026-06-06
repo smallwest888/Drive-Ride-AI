@@ -10,10 +10,13 @@ struct HomeView: View {
     @StateObject private var viewModel = PlannerViewModel()
     @StateObject private var originSearch = LocationSearchService()
     @StateObject private var destinationSearch = LocationSearchService()
-    @StateObject private var locationManager = LocationManager()
+    @StateObject private var voice = VoiceInteractionManager()
 
     @FocusState private var focusedField: Field?
     @State private var showProfile = false
+    @State private var showLocationError = false
+    @State private var isLocating = false
+    @State private var locationErrorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,7 +30,12 @@ struct HomeView: View {
                 isProcessing: viewModel.isProcessing,
                 placeholder: tr("补充需求，如「有点赶」「想省钱」", "Add details, e.g. \"a bit rushed\", \"save money\""),
                 sendIcon: "paperplane.fill",
-                onSend: { focusedField = nil; viewModel.submit() }
+                voicePhase: voice.phase,
+                voiceTranscript: voice.transcript,
+                voiceMeterLevel: voice.meterLevel,
+                onSend: { focusedField = nil; viewModel.submit() },
+                onVoiceTap: toggleVoiceInput,
+                onDismissVoiceError: { voice.dismissError() }
             )
         }
         .background(Color(.systemBackground))
@@ -36,9 +44,18 @@ struct HomeView: View {
                 .environmentObject(profileStore)
                 .environmentObject(appLocale)
         }
-        .onAppear {
-            viewModel.updateProfileProvider { [weak profileStore] in
-                profileStore?.profile ?? .default
+        .alert(tr("定位失败", "Location failed"), isPresented: $showLocationError) {
+            Button(tr("好", "OK"), role: .cancel) {}
+        } message: {
+            Text(locationErrorMessage ?? tr("无法获取当前位置。", "Couldn't get your current location."))
+        }
+        .task {
+            await Task.yield()
+            await MainActor.run {
+                viewModel.updateProfileProvider(
+                    { [weak profileStore] in profileStore?.profile ?? .default },
+                    saver: { [weak profileStore] profile in profileStore?.profile = profile }
+                )
             }
         }
         .onChange(of: appLocale.language) { _, _ in viewModel.refreshWelcomeIfIdle() }
@@ -86,7 +103,7 @@ struct HomeView: View {
                 placeholder: tr("输入出发地", "Enter origin"),
                 text: $viewModel.originText,
                 field: .origin, focused: $focusedField,
-                showLocate: true, isLocating: locationManager.isResolving,
+                showLocate: true, isLocating: isLocating,
                 onLocate: locateCurrent
             )
             if viewModel.originPlace == nil, !originSearch.suggestions.isEmpty {
@@ -146,11 +163,34 @@ struct HomeView: View {
     }
 
     private func locateCurrent() {
-        Task {
-            if let place = await locationManager.requestCurrentPlace() {
+        guard !isLocating else { return }
+        isLocating = true
+        locationErrorMessage = nil
+        Task { @MainActor in
+            let manager = LocationManager()
+            if let place = await manager.requestCurrentPlace() {
                 originSearch.clear()
-                viewModel.setOrigin(place)
                 focusedField = nil
+                viewModel.setOrigin(place)
+            } else {
+                locationErrorMessage = manager.errorMessage
+                showLocationError = true
+            }
+            isLocating = false
+        }
+    }
+
+    private func toggleVoiceInput() {
+        focusedField = nil
+        if voice.phase == .speaking {
+            voice.stopSpeaking()
+            return
+        }
+
+        Task {
+            let settings = profileStore.profile.ai ?? .disabled
+            await voice.toggleRecording(settings: settings, lang: appLocale.lang) { text in
+                await viewModel.submitVoice(text)
             }
         }
     }
@@ -162,9 +202,11 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack(spacing: 16) {
                     ForEach(viewModel.messages) { message in
-                        MessageBubbleView(message: message) { reply in
-                            viewModel.sendQuickReply(reply)
-                        }
+                        MessageBubbleView(
+                            message: message,
+                            onQuickReply: { viewModel.sendQuickReply($0) },
+                            onAction: { viewModel.handleAction($0) }
+                        )
                         .id(message.id)
                     }
                     Color.clear.frame(height: 1).id(bottomAnchor)

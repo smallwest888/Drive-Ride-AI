@@ -1,51 +1,45 @@
 import Foundation
-import SwiftData
 import CoreLocation
 
-/// P+R 停车场本地数据库（SwiftData / SQLite）。首次启动写入种子数据。
+/// P+R 停车场本地缓存。
+/// 启动时不做任何 I/O；需要时只在后台解析内置 CSV，避免 SwiftData 初始化 / 写库卡住主线程。
 @MainActor
 final class ParkRideDatabase {
     static let shared = ParkRideDatabase()
 
-    private let container: ModelContainer
+    private var cachedLots: [ParkRideLotInfo] = []
+    private var prepareTask: Task<Void, Never>?
 
-    init() {
-        do {
-            container = try ModelContainer(for: ParkRideLot.self)
-        } catch {
-            // 退回到内存存储，保证不崩溃。
-            let config = ModelConfiguration(isStoredInMemoryOnly: true)
-            container = try! ModelContainer(for: ParkRideLot.self, configurations: config)
+    private init() {}
+
+    /// 后台预热内置 P+R 数据；重复调用安全。
+    func prepareIfNeeded() {
+        guard prepareTask == nil else { return }
+        prepareTask = Task(priority: .utility) {
+            let lots = await Task.detached(priority: .utility) {
+                ParkRideCSVParser.parseInfo(ParkRideSeedData.csv)
+                    .filter { $0.latitude != 0 || $0.longitude != 0 }
+            }.value
+            await MainActor.run {
+                self.cachedLots = lots
+            }
         }
-        seedIfNeeded()
     }
 
-    /// 数据库为空时写入种子数据。
-    func seedIfNeeded() {
-        let context = container.mainContext
-        let count = (try? context.fetchCount(FetchDescriptor<ParkRideLot>())) ?? 0
-        guard count == 0 else { return }
-
-        let lots = ParkRideCSVParser.parse(ParkRideSeedData.csv)
-        for lot in lots { context.insert(lot) }
-        try? context.save()
+    /// 规划前调用：若尚未就绪则等待后台解析完成（已就绪则立即返回）。
+    func activeLots() async -> [ParkRideLotInfo] {
+        prepareIfNeeded()
+        await prepareTask?.value
+        return cachedLots
     }
 
-    /// 所有启用且坐标有效的停车场（值快照）。
-    func activeLots() -> [ParkRideLotInfo] {
-        let context = container.mainContext
-        let descriptor = FetchDescriptor<ParkRideLot>(
-            predicate: #Predicate { $0.isActive }
-        )
-        let lots = (try? context.fetch(descriptor)) ?? []
-        return lots
-            .filter { $0.latitude != 0 || $0.longitude != 0 }
-            .map(\.info)
+    /// 同步读取缓存（仅当已预热过才有数据；否则返回空，由 MapKit 回落）。
+    func cachedActiveLots() -> [ParkRideLotInfo] {
+        cachedLots
     }
 
-    /// 目的地附近的停车场，按直线距离升序。
-    func lots(near coordinate: CLLocationCoordinate2D, maxDistanceKm: Double = 30) -> [ParkRideLotInfo] {
-        activeLots()
+    func lots(near coordinate: CLLocationCoordinate2D, maxDistanceKm: Double = 30) async -> [ParkRideLotInfo] {
+        await activeLots()
             .map { ($0, RouteService.straightLineKm($0.coordinate, coordinate)) }
             .filter { $0.1 <= maxDistanceKm }
             .sorted { $0.1 < $1.1 }
