@@ -7,7 +7,11 @@ const gatewayDir = path.resolve(import.meta.dirname, "..");
 const rootDir = path.resolve(gatewayDir, "..");
 const configPath = path.join(gatewayDir, "openclaw.local.json");
 const pluginPath = path.join(rootDir, "openclaw-drive-ride-plugin");
-const bundledNodePath = process.env.OPENCLAW_NODE_PATH || "C:\\Users\\ZHOU\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe";
+const bundledNodePath =
+  process.env.OPENCLAW_NODE_PATH ||
+  (process.platform === "win32"
+    ? "C:\\Users\\ZHOU\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe"
+    : process.execPath);
 
 const qwenApiKey =
   process.env.QWEN_API_KEY ||
