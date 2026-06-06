@@ -174,26 +174,66 @@ struct CommutePlanner {
         )
     }
 
+    /// 经 Apple Maps API 验证后的 P+R 候选结果。
+    private struct EvaluatedPR {
+        let lot: MKMapItem
+        let driveLeg: RouteLeg
+        let transitLeg: RouteLeg?
+        let transitDistanceKm: Double
+        let transitHours: Double
+        /// 真实总时间（小时）= 驾车到停车场 + 停车换乘 + 公交到目的地。
+        let totalHours: Double
+    }
+
     private func makeParkRidePlan(origin: ResolvedPlace, destination: ResolvedPlace,
                                   driving: RouteLeg, profile: UserProfile) async -> CommutePlan? {
-        // 在靠近目的地一侧（约 65% 处）搜索真实换乘停车场。
+        // 1) 在靠近目的地一侧（约 65% 处）搜索真实换乘停车场。
         let searchPoint = RouteService.interpolate(origin.coordinate, destination.coordinate, fraction: 0.65)
-        guard let lot = await routeService.findParkAndRide(near: searchPoint) else { return nil }
+        let lots = await routeService.searchParkAndRideLots(near: searchPoint)
+        guard !lots.isEmpty else { return nil }
 
-        let lotCoord = lot.placemark.coordinate
-        // 避免选到离起点太近或就在终点的「停车场」。
-        let driveStraight = RouteService.straightLineKm(origin.coordinate, lotCoord)
-        let toDestStraight = RouteService.straightLineKm(lotCoord, destination.coordinate)
-        guard driveStraight > 1.0, toDestStraight > 0.5 else { return nil }
+        // 2) 对所有停车场做本地快速预估（不调用 API），按预估总时间排序。
+        let ranked = TimeEstimationManager.rankedCandidates(origin: origin.coordinate,
+                                                            destination: destination.coordinate,
+                                                            lots: lots)
 
-        async let driveTask = routeService.route(from: origin.coordinate, to: lotCoord, transport: .automobile)
-        async let transitTask = routeService.transitETA(from: lotCoord, to: destination.coordinate)
-        guard let driveLeg = await driveTask else { return nil }
-        let transitLeg = await transitTask
+        // 3) 只取预估最优的前 5 个，调 Apple Maps API 做真实路径验证。
+        let candidates = Array(ranked.prefix(5))
 
-        let transitDistance = transitLeg?.distanceKm ?? toDestStraight * 1.3
-        let transitHours = transitLeg?.travelHours
-            ?? (transitDistance / Const.transitSpeedFallback + Const.transitAccessHours)
+        // 4) 对前 5 个用真实路线计算「驾车到停车场 + 公交到目的地」并取总时间最优者。
+        var best: EvaluatedPR?
+        for candidate in candidates {
+            let lotCoord = candidate.lot.placemark.coordinate
+            // 避免选到离起点太近或就在终点的「停车场」。
+            let driveStraight = RouteService.straightLineKm(origin.coordinate, lotCoord)
+            let toDestStraight = RouteService.straightLineKm(lotCoord, destination.coordinate)
+            guard driveStraight > 1.0, toDestStraight > 0.5 else { continue }
+
+            async let driveTask = routeService.route(from: origin.coordinate, to: lotCoord, transport: .automobile)
+            async let transitTask = routeService.transitETA(from: lotCoord, to: destination.coordinate)
+            guard let driveLeg = await driveTask else { continue }
+            let transitLeg = await transitTask
+
+            let transitDistance = transitLeg?.distanceKm ?? toDestStraight * 1.3
+            let transitHours = transitLeg?.travelHours
+                ?? (transitDistance / Const.transitSpeedFallback + Const.transitAccessHours)
+            let totalHours = driveLeg.travelHours + Const.prParkSwitchHours + transitHours
+
+            let evaluated = EvaluatedPR(lot: candidate.lot, driveLeg: driveLeg, transitLeg: transitLeg,
+                                        transitDistanceKm: transitDistance, transitHours: transitHours,
+                                        totalHours: totalHours)
+            if best == nil || evaluated.totalHours < best!.totalHours {
+                best = evaluated
+            }
+        }
+
+        guard let pick = best else { return nil }
+
+        let lot = pick.lot
+        let driveLeg = pick.driveLeg
+        let transitLeg = pick.transitLeg
+        let transitDistance = pick.transitDistanceKm
+        let transitHours = pick.transitHours
         let fare = transitFare(km: transitDistance, card: profile.transitCard)
         let driveCost = profile.car.energyCostPerKm * driveLeg.distanceKm
 

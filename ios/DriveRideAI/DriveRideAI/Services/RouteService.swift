@@ -53,11 +53,13 @@ struct RouteService {
         }
     }
 
-    /// 在某点附近搜索停车换乘点（P+R / 停车场）。
-    func findParkAndRide(near coordinate: CLLocationCoordinate2D,
-                         radiusMeters: Double = 8000) async -> MKMapItem? {
+    /// 在某点附近搜索停车换乘点（P+R / 停车场），返回去重后的候选列表。
+    func searchParkAndRideLots(near coordinate: CLLocationCoordinate2D,
+                               radiusMeters: Double = 8000,
+                               maxResults: Int = 12) async -> [MKMapItem] {
         // 依次尝试多组关键词，提升命中率（中英文 + POI 分类）。
         let queries = ["Park and Ride", "P+R 停车场", "停车换乘", "停车场", "Parking"]
+        var collected: [MKMapItem] = []
         for query in queries {
             let request = MKLocalSearch.Request()
             request.naturalLanguageQuery = query
@@ -68,24 +70,27 @@ struct RouteService {
                 request.regionPriority = .required
             }
             let search = MKLocalSearch(request: request)
-            if let response = try? await search.start(),
-               let nearest = nearestItem(to: coordinate, in: response.mapItems) {
-                return nearest
+            if let response = try? await search.start() {
+                collected.append(contentsOf: response.mapItems)
+                if collected.count >= maxResults { break }
             }
         }
-        return nil
+        return dedup(collected, limit: maxResults)
     }
 
-    private func nearestItem(to coordinate: CLLocationCoordinate2D,
-                             in items: [MKMapItem]) -> MKMapItem? {
-        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        return items.min { a, b in
-            let da = CLLocation(latitude: a.placemark.coordinate.latitude,
-                                longitude: a.placemark.coordinate.longitude).distance(from: origin)
-            let db = CLLocation(latitude: b.placemark.coordinate.latitude,
-                                longitude: b.placemark.coordinate.longitude).distance(from: origin)
-            return da < db
+    /// 按坐标去重（精度约 50m），避免同一个停车场被多次计入。
+    private func dedup(_ items: [MKMapItem], limit: Int) -> [MKMapItem] {
+        var seen = Set<String>()
+        var result: [MKMapItem] = []
+        for item in items {
+            let c = item.placemark.coordinate
+            let key = String(format: "%.3f,%.3f", c.latitude, c.longitude)
+            if seen.insert(key).inserted {
+                result.append(item)
+                if result.count >= limit { break }
+            }
         }
+        return result
     }
 
     /// 计算两坐标之间的直线距离（km），用于挑选换乘点位置。
