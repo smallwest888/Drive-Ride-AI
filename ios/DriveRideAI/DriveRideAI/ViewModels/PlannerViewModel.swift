@@ -106,7 +106,8 @@ final class PlannerViewModel: ObservableObject {
             let input = PlanningInput(origin: originPlace,
                                       destination: destinationPlace,
                                       userText: extraText,
-                                      profile: profileProvider())
+                                      profile: profileProvider(),
+                                      parkRideLots: ParkRideDatabase.shared.activeLots())
             let outcome = await planner.plan(input)
 
             messages.removeAll { $0.id == typing.id }

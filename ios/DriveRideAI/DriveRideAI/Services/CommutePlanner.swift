@@ -7,6 +7,8 @@ struct PlanningInput {
     var destination: ResolvedPlace?
     var userText: String
     var profile: UserProfile
+    /// 本地数据库中的真实 P+R 停车场（优先于 MapKit 搜索）。
+    var parkRideLots: [ParkRideLotInfo] = []
 }
 
 /// Agent 的输出。
@@ -97,7 +99,7 @@ struct CommutePlanner {
             if driving.distanceKm >= Const.prMinDistanceKm,
                let prPlan = await makeParkRidePlan(origin: origin, destination: destination,
                                                    driving: driving, profile: input.profile,
-                                                   currency: currency) {
+                                                   currency: currency, dbLots: input.parkRideLots) {
                 plans.append(prPlan)
             }
         }
@@ -205,6 +207,8 @@ struct CommutePlanner {
     /// 经 Apple Maps API 验证后的 P+R 候选结果。
     private struct EvaluatedPR {
         let lot: MKMapItem
+        /// 若来自本地数据库，则带有真实停车场信息（线路 / 价格 / 车位）。
+        let info: ParkRideLotInfo?
         let driveLeg: RouteLeg
         let transitLeg: RouteLeg?
         let transitDistanceKm: Double
@@ -214,16 +218,32 @@ struct CommutePlanner {
     }
 
     private func makeParkRidePlan(origin: ResolvedPlace, destination: ResolvedPlace,
-                                  driving: RouteLeg, profile: UserProfile, currency: String) async -> CommutePlan? {
-        // 1) 在靠近目的地一侧（约 65% 处）搜索真实换乘停车场。
+                                  driving: RouteLeg, profile: UserProfile, currency: String,
+                                  dbLots: [ParkRideLotInfo]) async -> CommutePlan? {
+        // 1) 候选停车场：优先用本地数据库里目的地附近的真实 P+R 停车场；
+        //    数据库没有覆盖该地区时，回落到 MapKit 搜索。
         let searchPoint = RouteService.interpolate(origin.coordinate, destination.coordinate, fraction: 0.65)
-        let lots = await routeService.searchParkAndRideLots(near: searchPoint)
-        guard !lots.isEmpty else { return nil }
+        let nearbyDB = dbLots
+            .filter { RouteService.straightLineKm($0.coordinate, destination.coordinate) <= 30 }
+
+        var infoByItem: [ObjectIdentifier: ParkRideLotInfo] = [:]
+        let lotItems: [MKMapItem]
+        if !nearbyDB.isEmpty {
+            lotItems = nearbyDB.map { info in
+                let item = MKMapItem(placemark: MKPlacemark(coordinate: info.coordinate))
+                item.name = info.name
+                infoByItem[ObjectIdentifier(item)] = info
+                return item
+            }
+        } else {
+            lotItems = await routeService.searchParkAndRideLots(near: searchPoint)
+        }
+        guard !lotItems.isEmpty else { return nil }
 
         // 2) 对所有停车场做本地快速预估（不调用 API），按预估总时间排序。
         let ranked = TimeEstimationManager.rankedCandidates(origin: origin.coordinate,
                                                             destination: destination.coordinate,
-                                                            lots: lots)
+                                                            lots: lotItems)
 
         // 3) 只取预估最优的前 5 个，调 Apple Maps API 做真实路径验证。
         let candidates = Array(ranked.prefix(5))
@@ -247,7 +267,9 @@ struct CommutePlanner {
                 ?? (transitDistance / Const.transitSpeedFallback + Const.transitAccessHours)
             let totalHours = driveLeg.travelHours + Const.prParkSwitchHours + transitHours
 
-            let evaluated = EvaluatedPR(lot: candidate.lot, driveLeg: driveLeg, transitLeg: transitLeg,
+            let evaluated = EvaluatedPR(lot: candidate.lot,
+                                        info: infoByItem[ObjectIdentifier(candidate.lot)],
+                                        driveLeg: driveLeg, transitLeg: transitLeg,
                                         transitDistanceKm: transitDistance, transitHours: transitHours,
                                         totalHours: totalHours)
             if best == nil || evaluated.totalHours < best!.totalHours {
@@ -258,6 +280,7 @@ struct CommutePlanner {
         guard let pick = best else { return nil }
 
         let lot = pick.lot
+        let info = pick.info
         let driveLeg = pick.driveLeg
         let transitLeg = pick.transitLeg
         let transitDistance = pick.transitDistanceKm
@@ -270,14 +293,29 @@ struct CommutePlanner {
         let parkFee = parkQuote.amount ?? 0
         let costComplete = fareQuote.isKnown && parkQuote.isKnown
 
-        let lotName = lot.name ?? tr("换乘停车场", "Park & Ride lot")
+        let lotName = info?.name ?? lot.name ?? tr("换乘停车场", "Park & Ride lot")
         let liveTag = transitLeg != nil ? tr("实时", "live") : tr("估算", "estimated")
-        let parkDetail = parkQuote.isKnown
-            ? tr("停车换乘", "Park & switch")
-            : tr("停车换乘（费用未填）", "Park & switch (fee not set)")
-        let transitDetail = fareQuote.isKnown
+
+        // 停车费说明：用户填了一口价则用之；否则若数据库有每小时价，展示真实费率（时长不定，不计入总价）。
+        var parkDetail: String
+        if parkQuote.isKnown {
+            parkDetail = tr("停车换乘", "Park & switch")
+        } else if let rate = info?.pricePerHour, rate > 0 {
+            let rateText = CurrencyFormat.string(rate, code: currency)
+            parkDetail = tr("停车换乘（约 \(rateText)/小时，时长不定未计入）",
+                            "Park & switch (~\(rateText)/h, duration unknown, excluded)")
+        } else {
+            parkDetail = tr("停车换乘（费用未填）", "Park & switch (fee not set)")
+        }
+
+        // 公交段说明：附上数据库里的真实换乘线路。
+        let lines = (info?.publicTransport ?? "").trimmingCharacters(in: .whitespaces)
+        var transitDetail = fareQuote.isKnown
             ? tr("公共交通进城（\(liveTag)）", "Transit into the city (\(liveTag))")
             : tr("公共交通进城（\(liveTag)，票价未填）", "Transit into the city (\(liveTag), fare not set)")
+        if !lines.isEmpty {
+            transitDetail += tr("｜线路 \(lines)", " | \(lines)")
+        }
         let segments = [
             PlanSegment(mode: .drive, detail: tr("驾车至「\(lotName)」", "Drive to \(lotName)"),
                         distanceKm: driveLeg.distanceKm, durationHours: driveLeg.travelHours, cost: driveCost,
@@ -302,6 +340,16 @@ struct CommutePlanner {
                    transport: .transit, polyline: nil)
         ]
 
+        var summary = tr("在「\(lotName)」停车换乘，避开市区拥堵与高价停车，通勤推荐。",
+                         "Park at \(lotName) and switch to transit — skip downtown congestion and pricey parking. Great for commuting.")
+        if let info {
+            if info.totalSpaces > 0 {
+                summary += tr("（约 \(info.totalSpaces) 个车位）", " (~\(info.totalSpaces) spaces)")
+            }
+            let note = info.notes.trimmingCharacters(in: .whitespaces)
+            if !note.isEmpty { summary += tr("｜提示：\(note)", " | Note: \(note)") }
+        }
+
         return CommutePlan(
             mode: .parkAndRide,
             segments: segments,
@@ -309,8 +357,7 @@ struct CommutePlanner {
             durationHours: time,
             carbonKg: carbon,
             highlight: nil,
-            summary: tr("在「\(lotName)」停车换乘，避开市区拥堵与高价停车，通勤推荐。",
-                        "Park at \(lotName) and switch to transit — skip downtown congestion and pricey parking. Great for commuting."),
+            summary: summary,
             currencyCode: currency,
             costIsComplete: costComplete,
             navLegs: navLegs

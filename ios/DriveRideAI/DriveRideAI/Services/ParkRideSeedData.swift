@@ -1,0 +1,104 @@
+import Foundation
+
+/// P+R 停车场种子数据（柏林官方 P+R，逐字嵌入的 CSV）。首次启动写入本地数据库。
+enum ParkRideSeedData {
+    static let csv = """
+id,name,address,latitude,longitude,totalSpaces,pricePerHour,city,facilities,publicTransport,operatingHours,contactPhone,notes,isActive,createdAt,updatedAt
+2,"FU Berlin","Otto-von-Simson-Straße 12, Dahlem, 14195 Berlin, Deutschland",52.454143,13.289695,0,,Berlin,"P+R服务,公交连接","","24小时","","",1,"2025-12-01 20:52:16","2025-12-01 20:52:16"
+9,"FU Berlin","Otto-von-Simson-Straße 12, Dahlem, 14195 Berlin, Deutschland",52.454143,13.289695,0,,Berlin,"P+R服务,公交连接","","24小时","","",1,"2025-11-15 00:56:07","2025-11-15 00:56:07"
+107,"P+R Alt-Mariendorf (U)","Reißeckstraße 14, 12107 Berlin",52.4396399712577,13.3897717130022,130,,Berlin,"",U6,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+108,"P+R Altglienicke (S)","Parkplatz, Parking lot, Paradiesstraße 256, 12526 Berlin",52.4055575346139,13.5580676577839,271,,Berlin,"","S45, S9",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+109,"P+R Biesdorf (S)","Wuhlgartenweg, 12683 Berlin",52.5136539270686,13.5570975614842,40,,Berlin,"",S5,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+110,"P+R Blankenburg (S)","Bahnhofstraße 1, 13129 Berlin",52.5912271550065,13.443615507513,17,,Berlin,"","S2, S26, S8",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+111,"P+R Breitenbachplatz (U)","Schildhornstraße 46, 12163 Berlin",52.4668216402247,13.3108322214083,128,,Berlin,"",U3,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+112,"P+R Buch (S)","Wiltbergstraße 23, 13125 Berlin",52.6352754726507,13.4934090568913,289,,Berlin,"",S2,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+113,"P+R Bundesplatz (S+U)","Bernhardstraße 13, 10715 Berlin",52.4782192641568,13.33029648337,83,,Berlin,"","S41, S42, S46, U9",24h,"","Pay before 8 PM on weekdays for €2 per hour.",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+114,"P+R Eichborndamm (S)","Breitenbachstraße, 13509 Berlin",52.5779702563416,13.3151393331241,31,,Berlin,"",S25,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+115,"P+R Elsterwerdaer Platz (U)","Apollofalterallee 104, 12683 Berlin",52.5044002549233,13.5632900409805,208,,Berlin,"",U5,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+116,"P+R Friedrichshagen (S)","Schöneicher Str. 1, 12587 Berlin",52.4580819254727,13.6275499498416,83,,Berlin,"","RE1, S3",24h,"","Sunday: Flea market unavailable",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+117,"P+R Grünau (S)","Adlergestell 552, 12527 Berlin",52.4127216730412,13.5756831400491,193,,Berlin,"","S46, S8, S85",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+118,"P+R Heidelberger Platz (S+U)","Rudolstädter Str. 1, 10713 Berlin",52.4811489804078,13.3122680509205,139,,Berlin,"","S41, S42, S46, U3",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+119,"P+R Hermsdorf (S)","Schloßstraße 28A, 13467 Berlin",52.6187944637441,13.3078078210058,76,,Berlin,"","S1, S85",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+120,"P+R Hohenschönhausen (S+R)","Wartenberger Str. 175, 13053 Berlin",52.5663400363458,13.5120728019626,47,,Berlin,"","RB12, RB24, RB32, S75",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+121,"P+R Hönow (U)","Böhlener Str., 12627 Berlin",52.5388434396482,13.6340294802566,264,,Berlin,"",U5,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+122,"P+R Innsbrucker Platz (S+U)","Wexstraße 17, 10827 Berlin",52.4882008656336,13.5503148662483,74,3.0,Berlin,"","S41, S42, S46, U4",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+123,"P+R Jungfernheide (S+U+R)","Max-Dohrn-Straße 5, 10589 Berlin",52.5307281853187,13.2996504572984,99,,Berlin,"","RB10, RB21, RE4, S41, S42, U7",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+124,"P+R Lichtenberg (S+U+R)","",0.0,0.0,40,,Berlin,"","RB12, RB24, RB25, RB26, RB32, S5, S7, S75, U5",24h,"","Permanently disabled",0,"2026-01-11 20:53:08","2026-01-11 20:55:49"
+125,"P+R Mahlsdorf (S+R)","Altentreptower Str., 12683 Berlin",52.5129694701171,13.5789563633344,60,,Berlin,"","RB26, S5",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+126,"P+R Marienfelde (S)","Bahnstraße 8, 12277 Berlin",52.4263282881203,13.3995300010656,26,,Berlin,"",S2,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+127,"P+R Marzahn (S)","Märkische Allee, 12679 Berlin",52.5442304658026,13.5422415908324,176,,Berlin,"",S7,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+128,"P+R Mehrower Allee (S)","Märkische Allee 280, 12687 Berlin",52.5575668461862,13.5536829490088,64,,Berlin,"",S7,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+129,"P+R Pankow-Heinersdorf (S)","Am Feuchten Winkel, 13189 Berlin",52.580256471307,13.4313842191557,501,,Berlin,"","S2, S26, S8",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+130,"P+R Parchimer Allee (U)","Parchimer Allee 45, 12359 Berlin",52.4455409559546,13.4503105226715,188,,Berlin,"",U7,24h,"","Friday 8–20 No Parking Due to Weekly Market",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+131,"P+R Plänterwald (S)","Köpenicker Landstraße 36, 12435 Berlin",52.4790853818078,13.4751955019626,8,,Berlin,"","S8, S85, S9",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+132,"P+R Priesterweg (S)","Priesterweg, 12157 Berlin",52.4593146855532,13.3557659712106,86,,Berlin,"","S2, S25, S26",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+133,"P+R Raoul-Wallenberg-Straße (S)","Märkische Allee, 12679 Berlin",52.5507253117863,13.5489010271104,45,,Berlin,"",S7,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+134,"P+R Rudow (U)","Waltersdorfer Ch 7, 12355 Berlin",52.4156281136941,13.4990664903199,44,,Berlin,"",U7,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+106,"P+R S Ahrensfelde(S+R)","P+R Parken und Reisen, Märkische Allee 410, 12689 Berlin",52.571131983284,13.5657550311563,371,,Berlin,"","RB25, S7",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+135,"P+R Schichauweg (S)","Schichauweg 2, 12307 Berlin",52.3989156484097,13.3897570191557,73,,Berlin,"",S2,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+136,"P+R Springpfuhl (S)","Helene-Weigel-Platz (Springpfuhl-Passage), 12681 Berlin",52.5263254759728,13.5396292709788,410,,Berlin,"","S7, S75",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+137,"P+R Tempelhof (S+U)","Tempelhofer Damm 118, 12099 Berlin",52.4693823661192,13.3861856884698,56,,Berlin,"","S41, S42, S45, S46, U6",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+138,"P+R Waidmannslust (S)","Jean-Jaurès-Straße, 13469 Berlin",52.6063209016569,13.3209997874507,50,,Berlin,"","S1, S85",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+139,"P+R Wannsee (S+R)","Nibelungenstraße, 14109 Berlin",52.4194477876923,13.1803825747061,33,,Berlin,"","RB23, RB37, RE1, RE7, S1, S25, S7",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+140,"P+R Wartenberg (S)","Ribnitzer Str. 1, 13051 Berlin",52.5723377313512,13.503437373159,38,,Berlin,"",S75,24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+141,"P+R Wittenau (S+U)","Oranienburger Str. 180, 13437 Berlin",52.5986533394434,13.3330645103568,22,,Berlin,"","S1, S85, U8",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+142,"P+R Wuhletal (S+U)","Altentreptower Str., 12683 Berlin",52.5129825288642,13.5791280247061,144,,Berlin,"","S5, U5",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+143,"P+R Wuhlheide (S)","FH53+M4, 12459 Berlin",52.4593504205956,13.5540759159773,8,,Berlin,"","RE1, S3",24h,"","",1,"2026-01-11 20:53:08","2026-01-11 20:53:30"
+"""
+}
+
+/// 简易 CSV 解析（支持双引号包裹的含逗号字段）。
+enum ParkRideCSVParser {
+    static func parse(_ csv: String) -> [ParkRideLot] {
+        var result: [ParkRideLot] = []
+        let lines = csv.split(whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+        for (index, rawLine) in lines.enumerated() {
+            if index == 0 { continue } // 跳过表头
+            let line = String(rawLine)
+            if line.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            let f = splitLine(line)
+            guard f.count >= 14, let id = Int(f[0]) else { continue }
+
+            let priceField = f[6].trimmingCharacters(in: .whitespaces)
+            let price = priceField.isEmpty ? nil : Double(priceField)
+
+            result.append(ParkRideLot(
+                remoteID: id,
+                name: f[1],
+                address: f[2],
+                latitude: Double(f[3]) ?? 0,
+                longitude: Double(f[4]) ?? 0,
+                totalSpaces: Int(f[5]) ?? 0,
+                pricePerHour: price,
+                city: f[7],
+                facilities: f[8],
+                publicTransport: f[9],
+                operatingHours: f[10],
+                contactPhone: f[11],
+                notes: f[12],
+                isActive: f[13] == "1",
+                createdAt: f.count > 14 ? f[14] : "",
+                updatedAt: f.count > 15 ? f[15] : ""
+            ))
+        }
+        return result
+    }
+
+    private static func splitLine(_ line: String) -> [String] {
+        var fields: [String] = []
+        var current = ""
+        var inQuotes = false
+        for ch in line {
+            if ch == "\"" {
+                inQuotes.toggle()
+            } else if ch == "," && !inQuotes {
+                fields.append(current)
+                current = ""
+            } else {
+                current.append(ch)
+            }
+        }
+        fields.append(current)
+        return fields.map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+}
