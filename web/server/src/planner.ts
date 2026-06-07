@@ -382,7 +382,7 @@ function makeTransitOnlyPlan(
   route: Awaited<ReturnType<typeof computeTransitRoute>>
 ): Plan {
   const comfortScore = clamp(88 - route.walkingDurationMinutes * 0.8 - route.transferCount * 9, 18, 90);
-  const carbonEstimate = route.distanceKm * 0.05;
+  const carbonEstimate = transitCarbonEstimate(route.distanceKm);
   const score = scorePlan({
     request,
     totalCost: route.fare,
@@ -448,7 +448,7 @@ async function makeParkRidePlan(
   const totalCost = parkingCost + transitRoute.fare;
   const totalDuration = drivingRoute.durationMinutes + transitRoute.totalDurationMinutes + 2;
   const comfortScore = clamp(90 - transitRoute.walkingDurationMinutes * 0.7 - transitRoute.transferCount * 7, 25, 94);
-  const carbonEstimate = drivingRoute.distanceKm * 0.17 + transitRoute.distanceKm * 0.05;
+  const carbonEstimate = drivingRoute.distanceKm * 0.17 + transitCarbonEstimate(transitRoute.distanceKm);
   const score = scorePlan({
     request,
     totalCost,
@@ -617,8 +617,20 @@ function routeSegmentsToSteps(segments: RouteSegment[]): PlanStep[] {
     description: segment.description,
     durationMinutes: segment.durationMinutes,
     cost: segment.fareIncluded ? Number(segment.metadata.fare ?? 0) : 0,
-    carbonKg: segment.kind === "drive" ? Number((segment.distanceKm * 0.17).toFixed(2)) : Number((segment.distanceKm * 0.05).toFixed(2))
+    carbonKg: segment.kind === "drive"
+      ? Number((segment.distanceKm * 0.17).toFixed(2))
+      : Number(transitCarbonEstimate(segment.distanceKm).toFixed(2))
   }));
+}
+
+function transitCarbonEstimate(distanceKm: number) {
+  return distanceKm * transitCarbonPerKm(distanceKm);
+}
+
+function transitCarbonPerKm(distanceKm: number) {
+  if (distanceKm >= 80) return 0.005;
+  if (distanceKm >= 25) return 0.025;
+  return 0.05;
 }
 
 function buildParkingSegment(language: Language, durationHours: number, parkingCost: number, parkingName: string | null): RouteSegment {

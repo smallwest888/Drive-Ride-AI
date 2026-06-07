@@ -10,6 +10,19 @@ struct NavLeg: Identifiable {
     let transport: MKDirectionsTransportType
     let polyline: MKPolyline?
 
+    var displayLabel: String {
+        switch label {
+        case "驾车到 P+R", "驾车到换乘点":
+            return tr("驾车到 P+R", "Drive to P+R")
+        case "公共交通", "换乘进城":
+            return tr("公共交通", "Public transit")
+        case "驾车":
+            return tr("驾车", "Driving")
+        default:
+            return label
+        }
+    }
+
     /// 在 Apple 地图中打开该段导航。
     func openInAppleMaps() {
         let mode: String
@@ -115,6 +128,50 @@ struct PlanSegment: Identifiable, Equatable {
     /// 可选出发时间（用于公共交通）。
     var departureDate: Date?
 
+    var displayDetail: String {
+        switch mode {
+        case .drive:
+            if detail.hasPrefix("驾车至「"), detail.hasSuffix("」") {
+                let name = detail
+                    .dropFirst("驾车至「".count)
+                    .dropLast()
+                return tr(detail, "Drive to \(name)")
+            }
+            return localizedFixedDetail
+        case .park, .bus, .subway, .walk:
+            return localizedFixedDetail
+        }
+    }
+
+    private var localizedFixedDetail: String {
+        switch detail {
+        case "停车换乘":
+            return tr("停车换乘", "Park & switch")
+        case "停车换乘（未查到）":
+            return tr("停车换乘（未查到）", "Park & switch (not found)")
+        case "停车换乘（联网搜索）":
+            return tr("停车换乘（联网搜索）", "Park & switch (online lookup)")
+        case "公共交通":
+            return tr("公共交通", "Public transit")
+        case "驾车直达":
+            return tr("驾车直达", "Drive all the way")
+        case "步行":
+            return tr("步行", "Walk")
+        default:
+            if detail.hasPrefix("停车换乘（联网："), detail.hasSuffix("）") {
+                let source = detail
+                    .dropFirst("停车换乘（联网：".count)
+                    .dropLast()
+                return tr(detail, "Park & switch (online: \(source))")
+            }
+            if detail.hasPrefix("公共交通｜线路 ") {
+                let lines = detail.dropFirst("公共交通｜线路 ".count)
+                return tr(detail, "Public transit | \(lines)")
+            }
+            return detail
+        }
+    }
+
     static func == (lhs: PlanSegment, rhs: PlanSegment) -> Bool { lhs.id == rhs.id }
 }
 
@@ -139,6 +196,8 @@ struct CommutePlan: Identifiable, Equatable {
     var navLegs: [NavLeg] = []
     /// 可选的顺风车 / 拼车入口。
     var rideshareURL: URL?
+    /// 可选的电车充电 / 充电路线规划入口。
+    var electroverseURL: URL?
 
     /// 用于地图预览的所有路线几何。
     var polylines: [MKPolyline] {

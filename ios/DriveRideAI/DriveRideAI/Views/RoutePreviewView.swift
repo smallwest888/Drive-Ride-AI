@@ -29,7 +29,7 @@ struct RoutePreviewView: View {
                     MapPolyline(polyline)
                         .stroke(plan.mode.tint, lineWidth: 5)
                 }
-                Marker(leg.label, systemImage: leg.transport == .automobile ? "car.fill" : "tram.fill",
+                Marker(leg.displayLabel, systemImage: leg.transport == .automobile ? "car.fill" : "tram.fill",
                        coordinate: leg.destination.placemark.coordinate)
                     .tint(plan.mode.tint)
             }
@@ -50,18 +50,19 @@ struct RoutePreviewView: View {
                 } label: {
                     HStack {
                         Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                        Text(tr("用 Apple 地图：\(leg.label)", "Apple Maps: \(leg.label)"))
+                        Text(tr("用 Apple 地图：\(leg.displayLabel)", "Apple Maps: \(leg.displayLabel)"))
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 12)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(.secondarySystemBackground)))
+                    .glassPanel(cornerRadius: 18, tint: plan.mode.tint, material: .thinMaterial)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.primary)
             }
         }
         .padding(16)
+        .background(.ultraThinMaterial)
+        .overlay(Rectangle().fill(.white.opacity(0.18)).frame(height: 0.6), alignment: .top)
     }
 }

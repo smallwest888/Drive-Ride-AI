@@ -76,8 +76,7 @@ struct VoiceModeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color(.secondarySystemBackground)))
+        .glassPanel(cornerRadius: 24, tint: .accentColor, material: .ultraThinMaterial)
         .frame(minHeight: 120)
     }
 
@@ -92,8 +91,12 @@ struct VoiceModeView: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(voice.isRecording ? Color.red.opacity(0.15) : Color.accentColor.opacity(0.12))
+                    .fill(.ultraThinMaterial)
                     .frame(width: 120, height: 120)
+                    .overlay(Circle().fill((voice.isRecording ? Color.red : Color.accentColor).opacity(0.08)))
+                    .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 0.9))
+                    .shadow(color: (voice.isRecording ? Color.red : Color.accentColor).opacity(0.16),
+                            radius: 18, x: 0, y: 8)
                 Circle()
                     .stroke(voice.isRecording ? Color.red : Color.accentColor, lineWidth: 3)
                     .frame(width: 96 + CGFloat(voice.meterLevel) * 24,

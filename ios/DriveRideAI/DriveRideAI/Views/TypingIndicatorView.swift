@@ -18,10 +18,7 @@ struct TypingIndicatorView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
+        .glassPanel(cornerRadius: 18, tint: .accentColor, material: .thinMaterial)
         .animation(.easeInOut(duration: 0.25), value: phase)
         .onReceive(timer) { _ in
             phase = (phase + 1) % 3

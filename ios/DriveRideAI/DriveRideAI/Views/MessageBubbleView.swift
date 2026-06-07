@@ -22,10 +22,7 @@ struct MessageBubbleView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.accentColor)
-                )
+                .glassCapsule(tint: .accentColor, filled: true)
         }
     }
 
@@ -42,15 +39,10 @@ struct MessageBubbleView: View {
                     TypingIndicatorView()
                 } else {
                     if !message.text.isEmpty {
-                        Text(message.text)
-                            .font(.body)
-                            .foregroundStyle(.primary)
+                        MarkdownText(message.text)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .fill(Color(.secondarySystemBackground))
-                            )
+                            .glassPanel(cornerRadius: 20, tint: .accentColor, material: .thinMaterial)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(Array(message.plans.enumerated()), id: \.element.id) { index, plan in
@@ -77,8 +69,8 @@ struct MessageBubbleView: View {
                     Text(action.title)
                         .font(.footnote.weight(.semibold))
                         .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(Capsule().fill(Color.accentColor))
                         .foregroundStyle(.white)
+                        .glassCapsule(tint: .accentColor, filled: true)
                 }
                 .buttonStyle(.plain)
             }
@@ -93,8 +85,8 @@ struct MessageBubbleView: View {
                 Text(reply)
                     .font(.footnote.weight(.medium))
                     .padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                     .foregroundStyle(Color.accentColor)
+                    .glassCapsule(tint: .accentColor)
             }
             .buttonStyle(.plain)
         }
@@ -140,6 +132,96 @@ struct FlexibleChips<Content: View>: View {
     }
 }
 
+/// 渲染助手回复中的 Markdown（标题、列表、加粗、链接等）。
+private struct MarkdownText: View {
+    private enum Block: Identifiable {
+        case heading(String, Int)
+        case bullet(String)
+        case paragraph(String)
+
+        var id: String {
+            switch self {
+            case let .heading(text, level): return "h\(level)-\(text)"
+            case let .bullet(text): return "b-\(text)"
+            case let .paragraph(text): return "p-\(text)"
+            }
+        }
+    }
+
+    private let blocks: [Block]
+
+    init(_ text: String) {
+        self.blocks = Self.parse(text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(blocks) { block in
+                switch block {
+                case let .heading(text, level):
+                    inlineMarkdown(text)
+                        .font(level == 1 ? .headline : .subheadline.weight(.semibold))
+                        .padding(.top, 2)
+                case let .bullet(text):
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("•")
+                        inlineMarkdown(text)
+                    }
+                    .font(.body)
+                case let .paragraph(text):
+                    inlineMarkdown(text)
+                        .font(.body)
+                }
+            }
+        }
+        .foregroundStyle(.primary)
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func inlineMarkdown(_ text: String) -> Text {
+        if let attributed = try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            return Text(attributed)
+        }
+        return Text(text)
+    }
+
+    private static func parse(_ text: String) -> [Block] {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var blocks: [Block] = []
+        var paragraph: [String] = []
+
+        func flushParagraph() {
+            let joined = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { blocks.append(.paragraph(joined)) }
+            paragraph.removeAll()
+        }
+
+        for raw in lines {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                flushParagraph()
+            } else if line.hasPrefix("## ") {
+                flushParagraph()
+                blocks.append(.heading(String(line.dropFirst(3)), 2))
+            } else if line.hasPrefix("# ") {
+                flushParagraph()
+                blocks.append(.heading(String(line.dropFirst(2)), 1))
+            } else if line.hasPrefix("- ") {
+                flushParagraph()
+                blocks.append(.bullet(String(line.dropFirst(2))))
+            } else {
+                paragraph.append(raw)
+            }
+        }
+        flushParagraph()
+        return blocks
+    }
+}
+
 #Preview {
     ScrollView {
         VStack(spacing: 16) {
@@ -148,6 +230,14 @@ struct FlexibleChips<Content: View>: View {
                 role: .assistant,
                 text: "我已记录行程。方便告诉我大致距离吗？",
                 quickReplies: ["约 5 公里", "约 15 公里", "约 30 公里", "约 50 公里"]
+            ))
+            MessageBubbleView(message: ChatMessage(
+                role: .assistant,
+                text: """
+                ## 交通卡建议
+                - **Deutschlandticket**：适合本地/区域交通
+                - 州票：适合偶尔跨城市出行
+                """
             ))
             MessageBubbleView(message: ChatMessage(role: .assistant, text: "", isTyping: true))
         }

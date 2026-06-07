@@ -20,7 +20,7 @@ struct PlanningOutcome {
     var resolvedDestination: String?
 }
 
-/// Drive&Ride 规划 Agent —— 使用 MapKit 真实路线。
+/// CityDrive-Ride 规划 Agent —— 使用 MapKit 真实路线。
 ///
 /// 工作流：
 /// 1. 取出发地、目的地（真实坐标，来自地址搜索 / 定位）；
@@ -37,13 +37,15 @@ struct CommutePlanner {
         static let transitSpeedFallback = 22.0   // 公交无 ETA 时的兜底速度 km/h
         static let transitAccessHours = 12.0 / 60.0
 
-        // 时间缓冲（找车位 / 换乘步行），非价格。
+        // 时间缓冲（停车落锁 / 走到站口），公交路线本身通常已包含站内步行，避免重复放大 P+R 损耗。
         static let cityParkingSearchHours = 8.0 / 60.0
-        static let prParkSwitchHours = 4.0 / 60.0
+        static let prParkSwitchHours = 2.0 / 60.0
 
         static let carCarbonPerKm = 0.16
         static let evCarbonPerKm = 0.07
-        static let transitCarbonPerKm = 0.05
+        static let localTransitCarbonPerKm = 0.05
+        static let regionalRailCarbonPerKm = 0.025
+        static let longDistanceRailCarbonPerKm = 0.005
 
         static let prMinDistanceKm = 6.0         // 低于此距离不建议 P+R
         static let prMaxDistanceToDestinationKm = 20.0
@@ -256,23 +258,32 @@ struct CommutePlanner {
                                   distanceKm: distance, durationHours: hours, cost: 0,
                                   currencyCode: currency,
                                   departureDate: transit?.expectedDepartureDate)
-        let navLeg = NavLeg(label: tr("公共交通导航", "Transit navigation"),
+        let navLeg = NavLeg(label: tr("公共交通", "Public transit"),
                             source: origin.mapItem, destination: destination.mapItem,
                             transport: .transit, polyline: nil)
+
+        let summary: String
+        if !profile.hasCar {
+            summary = tr("无需停车；也可用 BlaBlaCar 查找 pooling / 顺风车。",
+                         "No parking needed; BlaBlaCar can provide pooling / rideshare options.")
+        } else if profile.transitCard.coversTransitFully {
+            summary = tr("AI 会先确认通票适用范围。", "AI checks pass coverage first.")
+        } else {
+            summary = tr("无需停车。", "No parking needed.")
+        }
 
         return CommutePlan(
             mode: .transit,
             segments: [segment],
             cost: 0,
             durationHours: hours,
-            carbonKg: distance * Const.transitCarbonPerKm,
+            carbonKg: transitCarbonKg(distanceKm: distance),
             highlight: nil,
-            summary: profile.transitCard.coversTransitFully
-                ? tr("AI 会先确认通票适用范围。", "AI checks pass coverage first.")
-                : tr("无需停车。", "No parking needed."),
+            summary: summary,
             currencyCode: currency,
             costIsComplete: true,
-            navLegs: [navLeg]
+            navLegs: [navLeg],
+            rideshareURL: profile.hasCar ? nil : blablacarURL()
         )
     }
 
@@ -289,9 +300,9 @@ struct CommutePlanner {
                              aiSettings: AISettings?) async -> BuiltPlan {
         let fuelCost = profile.car.energyCostPerKm * driving.distanceKm
         let parkQuote = await parkingFeeQuote(
-            placeText: placeText(destination),
-            contextText: tr("市区/目的地附近停车，优先估算 2 小时停车费",
-                            "Downtown / destination parking, prefer a 2-hour estimate"),
+            placeText: parkingSearchText(for: destination),
+            contextText: tr("市区/目的地附近停车；必须匹配目的地国家、城市或坐标附近；优先估算 2 小时停车费",
+                            "Downtown / destination parking; must match the destination country, city, or nearby coordinates; prefer a 2-hour estimate"),
             currency: currency,
             lang: lang,
             settings: aiSettings
@@ -306,7 +317,7 @@ struct CommutePlanner {
                         distanceKm: 0, durationHours: Const.cityParkingSearchHours, cost: parkFee,
                         currencyCode: currency)
         ]
-        let navLeg = NavLeg(label: tr("驾车导航", "Driving navigation"),
+        let navLeg = NavLeg(label: tr("驾车", "Driving"),
                             source: origin.mapItem, destination: destination.mapItem,
                             transport: .automobile, polyline: driving.polyline)
 
@@ -327,7 +338,8 @@ struct CommutePlanner {
             currencyCode: currency,
             costIsComplete: parkQuote.quote.isKnown,
             navLegs: [navLeg],
-            rideshareURL: blablacarURL()
+            rideshareURL: blablacarURL(),
+            electroverseURL: electroverseURL(for: profile.car)
         )
         return BuiltPlan(plan: plan, searchEvidence: parkQuote.evidence.map { [$0] } ?? [])
     }
@@ -439,14 +451,19 @@ struct CommutePlanner {
         let transitHours = pick.transitHours
         let driveCost = profile.car.energyCostPerKm * driveLeg.distanceKm
 
-        let parkQuote = await parkingFeeQuote(
-            placeText: "\(lotNameForSearch(lot: lot, info: info)), \(info?.address ?? "")",
-            contextText: tr("P+R 停车场，优先搜索日票/单次停车费，其次每小时费率",
-                            "P+R lot, prefer day/single-session parking fee, otherwise hourly rate"),
-            currency: currency,
-            lang: lang,
-            settings: aiSettings
-        )
+        let parkQuote: ParkingFeeInput
+        if let databaseQuote = databaseParkingFeeQuote(info: info, currency: currency, lang: lang) {
+            parkQuote = databaseQuote
+        } else {
+            parkQuote = await parkingFeeQuote(
+                placeText: parkingSearchText(for: lot, info: info, destination: destination),
+                contextText: tr("P+R 停车场；必须匹配该停车场名称、地址、目的地国家或坐标附近；优先搜索日票/单次停车费，其次每小时费率",
+                                "P+R lot; must match this lot name, address, destination country, or nearby coordinates; prefer day/single-session parking, otherwise hourly rate"),
+                currency: currency,
+                lang: lang,
+                settings: aiSettings
+            )
+        }
         let parkFee = parkQuote.quote.amount ?? 0
         let costComplete = parkQuote.quote.isKnown
 
@@ -455,10 +472,6 @@ struct CommutePlanner {
         var parkDetail: String
         if parkQuote.quote.isKnown {
             parkDetail = parkingDetail(prefix: tr("停车换乘", "Park & switch"), result: parkQuote)
-        } else if let rate = info?.pricePerHour, rate > 0 {
-            let rateText = CurrencyFormat.string(rate, code: currency)
-            parkDetail = tr("停车换乘（参考 \(rateText)/小时）",
-                            "Park & switch (~\(rateText)/h reference)")
         } else {
             parkDetail = tr("停车换乘（未查到）", "Park & switch (not found)")
         }
@@ -483,13 +496,13 @@ struct CommutePlanner {
         ]
         let total = driveCost + parkFee
         let time = driveLeg.travelHours + Const.prParkSwitchHours + transitHours
-        let carbon = driveLeg.distanceKm * carCarbonKgPerKm + transitDistance * Const.transitCarbonPerKm
+        let carbon = driveLeg.distanceKm * carCarbonKgPerKm + transitCarbonKg(distanceKm: transitDistance)
 
         let navLegs = [
-            NavLeg(label: tr("驾车到换乘点", "Drive to lot"),
+            NavLeg(label: tr("驾车到 P+R", "Drive to P+R"),
                    source: origin.mapItem, destination: lot,
                    transport: .automobile, polyline: driveLeg.polyline),
-            NavLeg(label: tr("换乘进城", "Transit to destination"),
+            NavLeg(label: tr("公共交通", "Public transit"),
                    source: lot, destination: destination.mapItem,
                    transport: .transit, polyline: nil)
         ]
@@ -517,7 +530,8 @@ struct CommutePlanner {
             currencyCode: currency,
             costIsComplete: costComplete,
             navLegs: navLegs,
-            rideshareURL: blablacarURL()
+            rideshareURL: blablacarURL(),
+            electroverseURL: electroverseURL(for: profile.car)
         )
         return BuiltPlan(plan: plan, searchEvidence: parkQuote.evidence.map { [$0] } ?? [])
     }
@@ -566,6 +580,18 @@ struct CommutePlanner {
         return summary + tr("｜\(sourceNote)", " | \(sourceNote)")
     }
 
+    private func transitCarbonKg(distanceKm: Double) -> Double {
+        distanceKm * transitCarbonPerKm(distanceKm: distanceKm)
+    }
+
+    private func transitCarbonPerKm(distanceKm: Double) -> Double {
+        // MapKit does not expose exact vehicle categories here. Long transit legs in Germany
+        // are usually rail-heavy, so avoid treating them like bus/local transit emissions.
+        if distanceKm >= 80 { return Const.longDistanceRailCarbonPerKm }
+        if distanceKm >= 25 { return Const.regionalRailCarbonPerKm }
+        return Const.localTransitCarbonPerKm
+    }
+
     private func appendRideshareSuggestion(to summary: String, carbonKg: Double) -> String {
         let twoPeople = carbonKg / 2.0
         let threePeople = carbonKg / 3.0
@@ -579,10 +605,36 @@ struct CommutePlanner {
         URL(string: "https://www.blablacar.de/search-car-sharing")
     }
 
+    private func electroverseURL(for car: CarProfile) -> URL? {
+        switch car.fuelType {
+        case .electric, .hybrid:
+            return URL(string: "https://electroverse.com/home")
+        case .gasoline, .diesel:
+            return nil
+        }
+    }
+
     private struct ParkingFeeInput {
         let quote: PriceQuote
         let evidence: String?
         let shortSource: String?
+    }
+
+    private func databaseParkingFeeQuote(info: ParkRideLotInfo?, currency: String, lang: Lang) -> ParkingFeeInput? {
+        guard let info, let rate = info.pricePerHour, rate > 0 else { return nil }
+        let billableHours = max(1.0, Const.prParkSwitchHours.rounded(.up))
+        let amount = rate * billableHours
+        let rateText = CurrencyFormat.string(rate, code: currency)
+        let amountText = CurrencyFormat.string(amount, code: currency)
+        let evidence = tr(
+            "停车费：\(info.name) → \(amountText)；来源：本地 P+R 数据库（\(rateText)/小时）。",
+            "Parking fee: \(info.name) → \(amountText); source: local P+R database (\(rateText)/h)."
+        )
+        return ParkingFeeInput(
+            quote: PriceQuote(amount: amount, source: .localDatabase),
+            evidence: evidence,
+            shortSource: tr("本地 P+R 数据库", "local P+R database")
+        )
     }
 
     private func parkingFeeQuote(placeText: String,
@@ -636,6 +688,28 @@ struct CommutePlanner {
 
     private func placeText(_ place: ResolvedPlace) -> String {
         place.subtitle.isEmpty ? place.name : "\(place.name), \(place.subtitle)"
+    }
+
+    private func parkingSearchText(for place: ResolvedPlace) -> String {
+        let country = place.countryCode.map { "country=\($0)" } ?? "country=unknown"
+        let coordinate = String(format: "lat=%.5f, lon=%.5f", place.coordinate.latitude, place.coordinate.longitude)
+        return "\(placeText(place)); \(country); \(coordinate)"
+    }
+
+    private func parkingSearchText(for lot: MKMapItem, info: ParkRideLotInfo?, destination: ResolvedPlace) -> String {
+        var parts = [lotNameForSearch(lot: lot, info: info)]
+        if let address = info?.address, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append(address)
+        } else if let address = lot.placemark.title, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append(address)
+        }
+        if let country = destination.countryCode {
+            parts.append("destinationCountry=\(country)")
+        }
+        let coordinate = info?.coordinate ?? lot.placemark.coordinate
+        parts.append(String(format: "lotLat=%.5f, lotLon=%.5f", coordinate.latitude, coordinate.longitude))
+        parts.append(String(format: "destinationLat=%.5f, destinationLon=%.5f", destination.coordinate.latitude, destination.coordinate.longitude))
+        return parts.joined(separator: "; ")
     }
 
     private func lotNameForSearch(lot: MKMapItem, info: ParkRideLotInfo?) -> String {
@@ -697,9 +771,17 @@ struct CommutePlanner {
                                  carCarbonPremise: String?,
                                  lang: Lang) -> String {
         let note = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let memory = profile.markdownMemory
         if lang == .zh {
-            var s = "行程：\(origin.name) → \(destination.name)；紧急程度：\(urgency.displayName)；用户本次方式意图：\(modeIntent.displayNameZh)；默认偏好：\(profile.preference.displayName)；交通卡：\(profile.transitCard.displayName)；是否有车：\(profile.hasCar ? "有" : "无")"
-            if !note.isEmpty { s += "；用户描述：\(note)" }
+            var s = """
+            ## 本次行程
+            - 路线：\(origin.name) → \(destination.name)
+            - 紧急程度：\(urgency.displayName)
+            - 用户本次方式意图：\(modeIntent.displayNameZh)
+
+            \(memory)
+            """
+            if !note.isEmpty { s += "\n- 用户描述：\(note)" }
             if let premise = ticketCoveragePremise?.trimmingCharacters(in: .whitespacesAndNewlines), !premise.isEmpty {
                 s += "\n票种适用范围前提（联网搜索结果）：\(premise)"
             }
@@ -711,8 +793,15 @@ struct CommutePlanner {
             }
             return s
         } else {
-            var s = "Trip: \(origin.name) → \(destination.name); urgency: \(urgency.displayName); user's mode intent this trip: \(modeIntent.displayNameEn); default preference: \(profile.preference.displayName); transit card: \(profile.transitCard.displayName); has car: \(profile.hasCar ? "yes" : "no")"
-            if !note.isEmpty { s += "; user note: \(note)" }
+            var s = """
+            ## Current Trip
+            - Route: \(origin.name) → \(destination.name)
+            - Urgency: \(urgency.displayName)
+            - User mode intent this trip: \(modeIntent.displayNameEn)
+
+            \(memory)
+            """
+            if !note.isEmpty { s += "\n- User note: \(note)" }
             if let premise = ticketCoveragePremise?.trimmingCharacters(in: .whitespacesAndNewlines), !premise.isEmpty {
                 s += "\nTicket coverage premise (online search result): \(premise)"
             }
@@ -900,8 +989,8 @@ struct CommutePlanner {
         }
 
         if !profile.hasCar {
-            lines.append(tr("你设置为「无车」，仅比较公共交通方案。",
-                            "Your profile is \"no car\", so only transit options are compared."))
+            lines.append(tr("你设置为「无车」，仅比较公共交通；也提供 BlaBlaCar pooling 入口作为顺风车备选。",
+                            "Your profile is \"no car\", so only transit is compared; a BlaBlaCar pooling link is also provided as a rideshare fallback."))
         } else if modeIntent != .any {
             lines.append(tr("已按你的「\(modeIntent.displayNameZh)」意图筛选方案。",
                             "Filtered plans by your \"\(modeIntent.displayNameEn)\" intent."))

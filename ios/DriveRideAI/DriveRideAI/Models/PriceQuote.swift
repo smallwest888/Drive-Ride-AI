@@ -2,6 +2,7 @@ import Foundation
 
 /// 价格来源，用于在 UI 上标明这笔钱是怎么来的（不编造）。
 enum PriceSource: Sendable {
+    case localDatabase
     case remote
     case none
 }

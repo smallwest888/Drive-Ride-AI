@@ -86,10 +86,10 @@ struct InputBarView: View {
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(voiceTint)
                                 .frame(width: 34, height: 34)
-                                .background(Circle().fill(voiceTint.opacity(isRecording ? 0.16 : 0.1)))
+                                .background(Circle().fill(.thinMaterial))
                                 .overlay(
                                     Circle()
-                                        .strokeBorder(voiceTint.opacity(isRecording ? 0.9 : 0), lineWidth: 1.5)
+                                        .strokeBorder(voiceTint.opacity(isRecording ? 0.9 : 0.25), lineWidth: 1.2)
                                         .scaleEffect(isRecording ? 1 + CGFloat(voiceMeterLevel) * 0.22 : 1)
                                         .animation(.easeOut(duration: 0.08), value: voiceMeterLevel)
                                 )
@@ -108,10 +108,7 @@ struct InputBarView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
-                )
+                .glassPanel(cornerRadius: 24, tint: voiceTint, material: .thinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .strokeBorder(isRecording ? Color.red.opacity(0.45) : Color.clear, lineWidth: 1)
@@ -122,9 +119,9 @@ struct InputBarView: View {
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 42, height: 42)
-                        .background(
-                            Circle().fill(canSend ? Color.accentColor : Color.gray.opacity(0.4))
-                        )
+                        .background(Circle().fill(canSend ? Color.accentColor : Color.gray.opacity(0.45)))
+                        .overlay(Circle().strokeBorder(.white.opacity(0.28), lineWidth: 0.8))
+                        .shadow(color: Color.accentColor.opacity(canSend ? 0.24 : 0), radius: 10, x: 0, y: 5)
                 }
                 .disabled(!canSend)
                 .animation(.easeInOut(duration: 0.15), value: canSend)
@@ -132,7 +129,8 @@ struct InputBarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.bar)
+        .background(.ultraThinMaterial)
+        .overlay(Rectangle().fill(.white.opacity(0.18)).frame(height: 0.6), alignment: .top)
     }
 
     private var voiceStatusView: some View {
@@ -174,10 +172,7 @@ struct InputBarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(voiceTint.opacity(0.1))
-        )
+        .glassPanel(cornerRadius: 18, tint: voiceTint, material: .thinMaterial)
     }
 }
 

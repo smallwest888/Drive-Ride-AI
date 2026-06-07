@@ -21,6 +21,8 @@ final class PlannerViewModel: ObservableObject {
     private var profileProvider: () -> UserProfile
     private var profileSaver: (UserProfile) -> Void = { _ in }
     private var awaitingCarSetup = false
+    private var awaitingTransitCardFrequency = false
+    private var conversationGeneration = 0
 
     /// 最近一次成功规划的完整行程上下文。后续纯对话（如“那还是开车吧”）会沿用它。
     private var lastOrigin: ResolvedPlace?
@@ -32,15 +34,22 @@ final class PlannerViewModel: ObservableObject {
     private var ignoreNextDestinationTextChange = false
 
     init(profileProvider: @escaping () -> UserProfile = { .default }) {
+        StartupProbe.mark("PlannerViewModel init begin")
         self.profileProvider = profileProvider
-        appendWelcome()
+        StartupProbe.mark("PlannerViewModel init end")
     }
 
     func updateProfileProvider(_ provider: @escaping () -> UserProfile,
                                saver: @escaping (UserProfile) -> Void = { _ in }) {
         self.profileProvider = provider
         self.profileSaver = saver
+        ensureWelcome()
         promptForCarSetupIfNeeded()
+    }
+
+    func ensureWelcome() {
+        guard messages.isEmpty else { return }
+        appendWelcome()
     }
 
     private func appendWelcome() {
@@ -48,8 +57,8 @@ final class PlannerViewModel: ObservableObject {
             ChatMessage(
                 role: .assistant,
                 text: tr(
-                    "你好，我是 Drive&Ride 出行助手 🅿️🚇\n在上方设置出发地和目的地，再描述需求（如「有点赶」「想省钱」）。我会比较公交、自驾、P+R 的时间、碳排和停车信息。",
-                    "Hi, I'm your Drive&Ride assistant 🅿️🚇\nSet your origin and destination above, then describe what you need (e.g. \"a bit rushed\", \"save money\"). I'll compare transit, driving, and Park & Ride by time, CO₂, and parking info."
+                    "你好，我是 CityDrive-Ride 出行助手 🅿️🚇\n在上方设置出发地和目的地，再描述需求（如「有点赶」「想省钱」）。我会比较公交、自驾、P+R 的时间、碳排和停车信息。",
+                    "Hi, I'm your CityDrive-Ride assistant 🅿️🚇\nSet your origin and destination above, then describe what you need (e.g. \"a bit rushed\", \"save money\"). I'll compare transit, driving, and Park & Ride by time, CO₂, and parking info."
                 )
             )
         )
@@ -105,6 +114,10 @@ final class PlannerViewModel: ObservableObject {
             handleCarSetup(extra)
             return
         }
+        if awaitingTransitCardFrequency {
+            handleTransitCardFrequency(extra)
+            return
+        }
 
         let parsed = parseTripText(extra)
         applyParsedTrip(parsed)
@@ -122,6 +135,10 @@ final class PlannerViewModel: ObservableObject {
             handleCarSetup(text)
             return
         }
+        if awaitingTransitCardFrequency {
+            handleTransitCardFrequency(text)
+            return
+        }
         messages.append(ChatMessage(role: .user, text: text))
         runPlanning(extraText: text)
     }
@@ -134,6 +151,10 @@ final class PlannerViewModel: ObservableObject {
         if awaitingCarSetup {
             handleCarSetup(trimmed)
             return tr("已保存车型信息。", "Saved car information.")
+        }
+        if awaitingTransitCardFrequency {
+            handleTransitCardFrequency(trimmed)
+            return tr("正在按你的使用频率联网分析交通卡。", "Analyzing transit passes online using your frequency.")
         }
 
         let parsed = parseTripText(trimmed)
@@ -388,6 +409,7 @@ final class PlannerViewModel: ObservableObject {
     @discardableResult
     private func runPlanningAsync(extraText: String) async -> String? {
         guard !isProcessing else { return nil }
+        let generation = conversationGeneration
 
         let typing = ChatMessage(
             role: .assistant,
@@ -400,10 +422,12 @@ final class PlannerViewModel: ObservableObject {
 
         if originPlace == nil, !originText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             originPlace = await resolver.resolve(query: originText)
+            guard generation == conversationGeneration else { return nil }
         }
         if destinationPlace == nil, !destinationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             destinationPlace = await resolver.resolve(query: destinationText,
                                                       near: originPlace?.coordinate)
+            guard generation == conversationGeneration else { return nil }
         }
 
         let context = tripContextForPlanning()
@@ -415,6 +439,7 @@ final class PlannerViewModel: ObservableObject {
                                   parkRideLots: ParkRideDatabase.shared.cachedActiveLots())
         ParkRideDatabase.shared.prepareIfNeeded()
         let outcome = await planner.plan(input)
+        guard generation == conversationGeneration else { return nil }
 
         var actions: [MessageAction] = []
         if !outcome.plans.isEmpty, let origin = context.origin, let dest = context.destination {
@@ -465,7 +490,7 @@ final class PlannerViewModel: ObservableObject {
         guard !isProcessing else { return }
         let profile = profileProvider()
 
-        guard let ai = profile.ai, ai.isUsable else {
+        guard profile.ai?.isUsable == true else {
             messages.append(ChatMessage(
                 role: .assistant,
                 text: tr("要联网查询德国票种的适用范围，请先到 设置 → 后台 AI 中开启并填入 API Key（支持 Qwen / OpenAI）。开启后我会自动搜索 Deutschlandticket、本地月票等是否适合这趟路线。",
@@ -473,32 +498,83 @@ final class PlannerViewModel: ObservableObject {
             ))
             return
         }
-        guard let dest = lastDestination else {
+        guard lastOrigin != nil, lastDestination != nil else {
             messages.append(ChatMessage(
                 role: .assistant,
-                text: tr("先规划一次行程，我才知道你要去哪个城市，再帮你联网查交通卡。",
-                         "Plan a trip first so I know which city to look up transit cards for.")
+                text: tr("先规划一次行程，我才知道出发地、目的地和沿途区域，再帮你联网查交通卡。",
+                         "Plan a trip first so I know the origin, destination, and route corridor.")
             ))
             return
         }
 
         messages.append(ChatMessage(role: .user,
                                     text: tr("该不该办张交通卡？", "Should I buy a transit card?")))
+        awaitingTransitCardFrequency = true
+        messages.append(ChatMessage(
+            role: .assistant,
+            text: tr("你大概多久会走这条路线？我会按使用频率联网分析沿途州/区域的火车联票、Deutschlandticket 和本地月票适用范围。",
+                     "How often will you use this route? I'll search online for state/regional rail passes, the Deutschlandticket, and local monthly-pass coverage along the route."),
+            quickReplies: [
+                tr("每天/工作日通勤", "Daily / weekdays"),
+                tr("每周 1-2 次", "1-2 times/week"),
+                tr("每月几次", "A few times/month"),
+                tr("偶尔旅游", "Occasional trips")
+            ]
+        ))
+    }
+
+    private func handleTransitCardFrequency(_ frequencyText: String) {
+        let frequency = frequencyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !frequency.isEmpty else { return }
+        awaitingTransitCardFrequency = false
+        messages.append(ChatMessage(role: .user, text: frequency))
+        runTransitCardAdvice(frequencyText: frequency)
+    }
+
+    private func runTransitCardAdvice(frequencyText: String) {
+        guard !isProcessing else { return }
+        let profile = profileProvider()
+
+        guard let ai = profile.ai, ai.isUsable else {
+            messages.append(ChatMessage(
+                role: .assistant,
+                text: tr("要联网查询德国票种的适用范围，请先到 设置 → 后台 AI 中开启并填入 API Key（支持 Qwen / OpenAI）。",
+                         "To look up German ticket coverage online, first enable Background AI in Settings and add an API key (Qwen / OpenAI).")
+            ))
+            return
+        }
+        guard let origin = lastOrigin, let dest = lastDestination else {
+            messages.append(ChatMessage(
+                role: .assistant,
+                text: tr("先规划一次行程，我才知道出发地、目的地和沿途区域。",
+                         "Plan a trip first so I know the origin, destination, and route corridor.")
+            ))
+            return
+        }
+
         let typing = ChatMessage(role: .assistant, text: "", isTyping: true)
         messages.append(typing)
         isProcessing = true
+        let generation = conversationGeneration
 
         Task {
             let currency = CurrencyFormat.currencyCode(forCountry: dest.countryCode)
-            let region = dest.subtitle.isEmpty ? dest.name : "\(dest.name)（\(dest.subtitle)）"
+            let region = [origin.name, dest.name].joined(separator: " → ")
+            let routeText = tr(
+                "\(lastTripSummary)；使用频率：\(frequencyText)\n\n\(profile.markdownMemory)",
+                "\(lastTripSummary); frequency: \(frequencyText)\n\n\(profile.markdownMemory)"
+            )
 
             let resultText: String
             do {
                 resultText = try await aiService.transitCardAdvice(
                     regionText: region,
+                    originText: origin.name,
+                    destinationText: dest.name,
                     currencyCode: currency,
                     currentCard: profile.transitCard.displayName,
-                    usageText: lastTripSummary,
+                    usageText: routeText,
+                    frequencyText: frequencyText,
                     lang: AppLocale.shared.lang,
                     settings: ai
                 )
@@ -507,6 +583,7 @@ final class PlannerViewModel: ObservableObject {
                                 "Couldn't fetch ticket coverage: \(error.localizedDescription)\n\nTip: in Settings › Background AI set \"Model\" to one your account supports (e.g. qwen-plus / qwen3-max), or check the API key and network.")
             }
 
+            guard generation == conversationGeneration else { return }
             messages.removeAll { $0.id == typing.id }
             messages.append(ChatMessage(role: .assistant, text: resultText))
             isProcessing = false
@@ -519,18 +596,26 @@ final class PlannerViewModel: ObservableObject {
         let note = extra.trimmingCharacters(in: .whitespacesAndNewlines)
         if !note.isEmpty {
             s += tr("；用户补充：\(note)", "; note: \(note)")
-        } else {
-            s += tr("；按工作日往返通勤估计使用频率", "; assume weekday round-trip commuting frequency")
         }
         return s
     }
 
     func reset() {
+        clearConversation()
+    }
+
+    private func clearConversation() {
+        conversationGeneration += 1
+        isProcessing = false
+        inputText = ""
         lastOrigin = nil
         lastDestination = nil
         lastTripSummary = ""
+        awaitingCarSetup = false
+        awaitingTransitCardFrequency = false
         messages.removeAll()
         appendWelcome()
+        promptForCarSetupIfNeeded()
     }
 
     func refreshWelcomeIfIdle() {

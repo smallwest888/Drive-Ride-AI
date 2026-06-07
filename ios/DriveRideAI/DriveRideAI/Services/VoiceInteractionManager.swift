@@ -63,6 +63,15 @@ final class VoiceInteractionManager: ObservableObject {
         if phase == .speaking { phase = .idle }
     }
 
+    func cancelInteraction() {
+        stopMeterPolling()
+        _ = recorder.stop()
+        player.stop()
+        transcript = ""
+        replyText = ""
+        phase = .idle
+    }
+
     func dismissError() {
         if case .error = phase { phase = .idle }
     }

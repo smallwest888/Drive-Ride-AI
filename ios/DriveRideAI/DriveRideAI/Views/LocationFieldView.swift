@@ -56,9 +56,6 @@ struct LocationFieldView<Field: Hashable>: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
+        .glassPanel(cornerRadius: 22, tint: iconColor, material: .thinMaterial)
     }
 }

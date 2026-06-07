@@ -117,13 +117,13 @@ struct AIService: Sendable {
         switch lang {
         case .zh:
             system = """
-            你是「Drive&Ride」通勤出行助手。请把用户给出的方案说明润色得自然、友好、简洁。
+            你是「CityDrive-Ride」通勤出行助手。请把用户给出的方案说明润色得自然、友好、简洁。
             严格要求：必须原样保留所有数字、地名、时间、价格、单位与符号（如「≥」），
             不得新增、删改或编造任何信息；只优化措辞与语气。直接输出润色后的简体中文。
             """
         case .en:
             system = """
-            You are the "Drive&Ride" commute assistant. Polish the user's plan summary to be \
+            You are the "CityDrive-Ride" commute assistant. Polish the user's plan summary to be \
             natural, friendly and concise. Strict rules: keep every number, place name, time, \
             price, unit and symbol (e.g. "≥") exactly; do not add, change, or fabricate any \
             information — only improve wording. Output the polished English text directly.
@@ -205,7 +205,7 @@ struct AIService: Sendable {
         switch lang {
         case .zh:
             system = """
-            你是「Drive&Ride」通勤方案决策助手。下面给你若干**已经用真实地图路线与汽车/停车成本算好**的候选方案\
+            你是「CityDrive-Ride」通勤方案决策助手。下面给你若干**已经用真实地图路线与汽车/停车成本算好**的候选方案\
             （每个带序号，含出行方式、总时间、汽车/停车费用、是否含「未填」停车费、碳排放、分段明细；公共交通候选不包含费用字段）。
             任务：综合用户的出行描述、偏好与紧急程度，在这些候选中**选出最佳方案并给出从优到次的完整排序**，并用一句话说明理由。
             严格要求：
@@ -219,7 +219,7 @@ struct AIService: Sendable {
             """
         case .en:
             system = """
-            You are the "Drive&Ride" commute decision assistant. Below are candidate plans **already computed \
+            You are the "CityDrive-Ride" commute decision assistant. Below are candidate plans **already computed \
             with real map routes and driving/parking costs** (each numbered, with mode, total time, driving/parking \
             cost, whether any parking price is "not set", carbon, and per-leg details; public-transit candidates do \
             not include a cost field).
@@ -266,8 +266,10 @@ struct AIService: Sendable {
         switch lang {
         case .zh:
             system = """
-            你是「Drive&Ride」停车费检索助手。请联网搜索目的地或停车场的官方/可信停车费信息。
+            你是「CityDrive-Ride」停车费检索助手。请联网搜索目的地或停车场的官方/可信停车费信息。
             严格要求：
+            - 搜索结果必须与用户给出的地点、城市/国家或坐标附近匹配；如果来源明显是其他城市/国家（例如德国路线却查到上海），amount 必须为 null。
+            - 如果地点名重名，必须用地址、国家、坐标或目的地上下文消歧；不能只凭同名停车场返回价格。
             - 优先使用停车场官网、城市/运营商页面、Parkopedia/Google Maps 明确费率等可信来源。
             - 只返回一个用于本次方案展示的实用金额：市区停车优先 2 小时估算；P+R 优先日票/单次停车费，其次每小时费率。
             - 如果找不到明确金额，amount 必须为 null；不要编造。
@@ -277,8 +279,10 @@ struct AIService: Sendable {
             """
         case .en:
             system = """
-            You are the "Drive&Ride" parking-fee lookup assistant. Search online for official or trustworthy parking-fee information for the destination or parking lot.
+            You are the "CityDrive-Ride" parking-fee lookup assistant. Search online for official or trustworthy parking-fee information for the destination or parking lot.
             Strict rules:
+            - The source must match the given place, city/country, or nearby coordinates; if the source is clearly in another city/country, amount must be null.
+            - If the place name is ambiguous, disambiguate by address, country, coordinates, or destination context; never return a rate from a same-named but different parking lot.
             - Prefer the parking operator, city/municipal pages, Parkopedia, or Google Maps when they show explicit rates.
             - Return one practical amount for this plan: for downtown parking prefer a 2-hour estimate; for P+R prefer day/single-session parking, otherwise hourly rate.
             - If no clear amount is found, amount must be null; do not fabricate.
@@ -311,7 +315,7 @@ struct AIService: Sendable {
         switch lang {
         case .zh:
             system = """
-            你是「Drive&Ride」德国铁路票价检索助手。请联网搜索 Deutsche Bahn / DB 官方页面（bahn.de 或 int.bahn.de）来查找这段铁路/公共交通路线可能的火车票价。
+            你是「CityDrive-Ride」德国铁路票价检索助手。请联网搜索 Deutsche Bahn / DB 官方页面（bahn.de 或 int.bahn.de）来查找这段铁路/公共交通路线可能的火车票价。
             严格要求：
             - 优先使用 DB / bahn.de / int.bahn.de 的连接搜索、票价或订票结果页面；不要用论坛或二手信息。
             - 如果 DB 页面给出具体票价、起价、Super Sparpreis/Sparpreis/Flexpreis 等范围，请原样概括到 fareText。
@@ -322,7 +326,7 @@ struct AIService: Sendable {
             """
         case .en:
             system = """
-            You are the "Drive&Ride" German rail-fare lookup assistant. Search Deutsche Bahn / DB official pages (bahn.de or int.bahn.de) for possible rail fares for this route.
+            You are the "CityDrive-Ride" German rail-fare lookup assistant. Search Deutsche Bahn / DB official pages (bahn.de or int.bahn.de) for possible rail fares for this route.
             Strict rules:
             - Prefer DB / bahn.de / int.bahn.de connection-search, fare, or booking-result pages; do not use forums or second-hand sources.
             - If a DB page shows a concrete fare, from-price, or Super Sparpreis/Sparpreis/Flexpreis range, summarize it verbatim in fareText.
@@ -359,7 +363,7 @@ struct AIService: Sendable {
         switch lang {
         case .zh:
             system = """
-            你是「Drive&Ride」德国公共交通票种适用范围检索助手。请联网搜索官方或权威信息，判断用户选择的德国常见票种在本次路线中大致是否适用。
+            你是「CityDrive-Ride」德国公共交通票种适用范围检索助手。请联网搜索官方或权威信息，判断用户选择的德国常见票种在本次路线中大致是否适用。
             只关注适用范围，不要查询或输出价格。
             要求：
             - 优先判断是否覆盖本地公交、U-Bahn、S-Bahn、Tram、Regionalbahn/RE/RB，以及是否排除 ICE/IC/EC 等长途列车。
@@ -369,7 +373,7 @@ struct AIService: Sendable {
             """
         case .en:
             system = """
-            You are the "Drive&Ride" German transit-ticket coverage checker. Search official or authoritative sources and judge whether the selected common German pass appears applicable to this route.
+            You are the "CityDrive-Ride" German transit-ticket coverage checker. Search official or authoritative sources and judge whether the selected common German pass appears applicable to this route.
             Focus only on coverage; do not look up or output prices.
             Rules:
             - Prioritize whether local buses, U-Bahn, S-Bahn, trams, Regionalbahn/RE/RB are covered, and whether ICE/IC/EC long-distance trains are excluded.
@@ -392,9 +396,12 @@ struct AIService: Sendable {
     ///
     /// 失败 / 未启用返回 nil。
     func transitCardAdvice(regionText: String,
+                           originText: String,
+                           destinationText: String,
                            currencyCode: String,
                            currentCard: String,
                            usageText: String,
+                           frequencyText: String,
                            lang: Lang,
                            settings: AISettings) async throws -> String {
         guard settings.isUsable else { throw AIError.notConfigured }
@@ -403,32 +410,32 @@ struct AIService: Sendable {
         switch lang {
         case .zh:
             system = """
-            你是「Drive&Ride」德国公共交通票种顾问。请联网搜索用户目的地城市/区域的**官方或权威票务说明**，重点比较德国常见票种：Deutschlandticket、本地/区域月票、Jobticket、学生票/优惠票等的适用范围，并给出选择建议。
+            你是「CityDrive-Ride」德国公共交通票种顾问。请联网搜索这条路线起终点之间相关的**官方或权威票务说明**，重点分析沿途州/区域的火车联票/州票、Deutschlandticket、本地/区域月票、Jobticket、学生票/优惠票等的适用范围，并结合用户使用频率给出选择建议。
             要求：
-            1. 先说明各票种大致覆盖哪些交通方式/区域，尤其是 Deutschlandticket 通常覆盖本地和区域交通、不覆盖 ICE/IC/EC 等长途列车。
-            2. 对本地/区域月票、Jobticket、学生票/优惠票，提醒需要匹配 Verkehrsverbund、票区/环区/身份条件。
-            3. 结合用户的通勤情况，明确建议优先考虑哪类票；信息不足时说“不确定，请以官方票务说明为准”。
-            4. 只讨论票种覆盖范围和适用条件，不做价格或回本计算；简洁、分点、用简体中文输出。
+            1. 先根据起点、终点和路线文字判断可能涉及的德国州、Verkehrsverbund/区域；不确定就写“不确定”。
+            2. 联网搜索并分别说明：Deutschlandticket、相关州票/区域火车联票、本地/区域月票、Jobticket/学生票/优惠票可能覆盖哪些交通方式/区域，尤其说明 ICE/IC/EC 等长途列车限制。
+            3. 结合用户使用频率判断：高频通勤、每周低频、每月几次、偶尔出行分别更该优先考虑哪类票。
+            4. 不编造；如果无法确认沿途州或票区，明确建议以官方 DB / Verkehrsverbund / 州票页面为准。
+            5. 不做具体价格或回本计算；简洁、分点、用简体中文输出。
             """
         case .en:
             system = """
-            You are the "Drive&Ride" German transit-ticket advisor. Search official or authoritative ticket \
-            information for the user's destination city/region, focusing on common German products: \
-            Deutschlandticket, local/regional monthly passes, Jobticket, student/discount passes, etc.
+            You are the "CityDrive-Ride" German transit-ticket advisor. Search official or authoritative ticket \
+            information for the route corridor between the origin and destination, focusing on relevant German \
+            federal-state/regional rail passes, the Deutschlandticket, local/regional monthly passes, Jobticket, \
+            student/discount passes, etc.
             Rules:
-            1. First explain each pass's likely coverage by mode/area, especially that the Deutschlandticket \
-            usually covers local and regional transit but not ICE/IC/EC long-distance trains.
-            2. For local/regional monthly passes, Jobtickets, and student/discount passes, note that the \
-            Verkehrsverbund, fare zones/rings, and eligibility usually must match.
-            3. Based on the user's commute, recommend which type to consider first; if details are insufficient, \
-            say "uncertain, check the official ticket terms".
-            4. Do not output transit prices or break-even calculations. Be concise and use bullets in English.
+            1. First infer the likely German federal states, Verkehrsverbund areas, or regional fare zones involved; if uncertain, say so.
+            2. Search and compare coverage for the Deutschlandticket, relevant state/regional rail passes, local/regional monthly passes, Jobticket/student/discount passes, especially ICE/IC/EC long-distance train exclusions.
+            3. Use the user's frequency to recommend what to consider first for high-frequency commuting, weekly low-frequency use, monthly occasional use, or tourism.
+            4. Do not fabricate; if the corridor or fare zones cannot be confirmed, advise checking official DB / Verkehrsverbund / state-ticket pages.
+            5. Do not output exact prices or break-even calculations. Be concise and use bullets in English.
             """
         }
 
         let user = lang == .zh
-            ? "目的地城市/区域：\(regionText)\n货币：\(currencyCode)\n我当前的交通卡：\(currentCard)\n出行情况：\(usageText)"
-            : "Destination city/area: \(regionText)\nCurrency: \(currencyCode)\nMy current card: \(currentCard)\nTrip pattern: \(usageText)"
+            ? "路线：\(regionText)\n出发地：\(originText)\n目的地：\(destinationText)\n货币：\(currencyCode)\n我当前的交通卡：\(currentCard)\n使用频率：\(frequencyText)\n出行/路线情况：\(usageText)"
+            : "Route: \(regionText)\nOrigin: \(originText)\nDestination: \(destinationText)\nCurrency: \(currencyCode)\nMy current card: \(currentCard)\nFrequency: \(frequencyText)\nTrip/route context: \(usageText)"
 
         return try await withTimeout(seconds: 15) {
             try await chat(system: system, user: user, settings: settings, enableSearch: true)

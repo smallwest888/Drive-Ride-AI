@@ -22,7 +22,10 @@ struct HomeView: View {
         VStack(spacing: 0) {
             header
             locationFields
-            Divider().padding(.top, 4)
+            Rectangle()
+                .fill(.white.opacity(0.18))
+                .frame(height: 0.6)
+                .padding(.top, 10)
             conversation
             if showSuggestions { suggestionBar }
             InputBarView(
@@ -38,7 +41,14 @@ struct HomeView: View {
                 onDismissVoiceError: { voice.dismissError() }
             )
         }
-        .background(Color(.systemBackground))
+        .background(
+            LinearGradient(colors: [Color(.systemBackground), Color(.secondarySystemBackground).opacity(0.55)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        )
+        .onAppear {
+            StartupProbe.mark("HomeView first appear")
+        }
         .sheet(isPresented: $showProfile) {
             ProfileView()
                 .environmentObject(profileStore)
@@ -50,12 +60,17 @@ struct HomeView: View {
             Text(locationErrorMessage ?? tr("无法获取当前位置。", "Couldn't get your current location."))
         }
         .task {
+            StartupProbe.mark("HomeView task begin")
             await Task.yield()
+            while !profileStore.isLoaded {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
             await MainActor.run {
                 viewModel.updateProfileProvider(
                     { [weak profileStore] in profileStore?.profile ?? .default },
                     saver: { [weak profileStore] profile in profileStore?.profile = profile }
                 )
+                StartupProbe.mark("HomeView task end")
             }
         }
         .onChange(of: appLocale.language) { _, _ in viewModel.refreshWelcomeIfIdle() }
@@ -74,7 +89,7 @@ struct HomeView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Drive&Ride")
+                Text("CityDrive-Ride")
                     .font(.system(size: 34, weight: .heavy))
                     .foregroundStyle(.primary)
                 Text(tr("P+R 停车场 + 公共交通", "P+R Parking + Public Transit"))
@@ -88,6 +103,8 @@ struct HomeView: View {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+                    .glassPanel(cornerRadius: 22, tint: .accentColor, material: .ultraThinMaterial)
             }
             .accessibilityLabel(tr("出行信息设置", "Travel settings"))
         }
@@ -151,7 +168,7 @@ struct HomeView: View {
                 Divider().padding(.leading, 40)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemBackground)))
+        .glassPanel(cornerRadius: 20, tint: .accentColor, material: .thinMaterial)
     }
 
     private func select(_ completion: MKLocalSearchCompletion,
@@ -250,8 +267,7 @@ struct HomeView: View {
                             .font(.footnote)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(Capsule().fill(Color(.secondarySystemBackground)))
-                            .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 1))
+                            .glassCapsule(tint: .accentColor)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.primary)

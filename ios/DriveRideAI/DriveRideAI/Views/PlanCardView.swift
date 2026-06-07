@@ -18,20 +18,13 @@ struct PlanCardView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if !plan.navLegs.isEmpty || plan.rideshareURL != nil { actionButtons }
+            if !plan.navLegs.isEmpty || plan.rideshareURL != nil || plan.electroverseURL != nil { actionButtons }
         }
         .sheet(isPresented: $showRoute) {
             RoutePreviewView(plan: plan)
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(plan.mode.tint.opacity(0.25), lineWidth: 1)
-        )
+        .glassPanel(cornerRadius: 24, tint: plan.mode.tint, material: .ultraThinMaterial)
     }
 
     private var header: some View {
@@ -49,7 +42,7 @@ struct PlanCardView: View {
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(plan.mode.tint))
+                        .glassCapsule(tint: plan.mode.tint, filled: true)
                 }
             }
             Spacer()
@@ -58,7 +51,7 @@ struct PlanCardView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(plan.mode.tint)
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Capsule().fill(plan.mode.tint.opacity(0.12)))
+                    .glassCapsule(tint: plan.mode.tint)
             }
         }
     }
@@ -107,8 +100,8 @@ struct PlanCardView: View {
                             .font(.footnote.weight(.semibold))
                             .padding(.horizontal, 12).padding(.vertical, 8)
                             .frame(maxWidth: .infinity)
-                            .background(Capsule().fill(plan.mode.tint.opacity(0.12)))
                             .foregroundStyle(plan.mode.tint)
+                            .glassCapsule(tint: plan.mode.tint)
                     }
                     .buttonStyle(.plain)
 
@@ -119,8 +112,8 @@ struct PlanCardView: View {
                             .font(.footnote.weight(.semibold))
                             .padding(.horizontal, 12).padding(.vertical, 8)
                             .frame(maxWidth: .infinity)
-                            .background(Capsule().fill(plan.mode.tint))
                             .foregroundStyle(.white)
+                            .glassCapsule(tint: plan.mode.tint, filled: true)
                     }
                     .buttonStyle(.plain)
                 }
@@ -130,12 +123,26 @@ struct PlanCardView: View {
                 Button {
                     openURL(url)
                 } label: {
-                    Label("BlaBlaCar", systemImage: "person.2.fill")
+                    Label("BlaBlaCar Pooling", systemImage: "person.2.fill")
                         .font(.footnote.weight(.semibold))
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .frame(maxWidth: .infinity)
-                        .background(Capsule().fill(Color.teal.opacity(0.14)))
                         .foregroundStyle(Color.teal)
+                        .glassCapsule(tint: .teal)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let url = plan.electroverseURL {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label("Electroverse", systemImage: "bolt.car.fill")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .foregroundStyle(Color.indigo)
+                        .glassCapsule(tint: .indigo)
                 }
                 .buttonStyle(.plain)
             }
@@ -151,7 +158,7 @@ struct PlanCardView: View {
                         .foregroundStyle(plan.mode.tint)
                         .frame(width: 20)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(segment.detail)
+                        Text(segment.displayDetail)
                             .font(.footnote)
                             .foregroundStyle(.primary)
                         if plan.mode == .transit || segment.mode == .bus || segment.mode == .subway {
@@ -178,10 +185,7 @@ struct PlanCardView: View {
             }
         }
         .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(.tertiarySystemBackground))
-        )
+        .glassPanel(cornerRadius: 16, tint: plan.mode.tint, material: .thinMaterial)
     }
 }
 
@@ -199,7 +203,8 @@ struct PlanCardView: View {
             carbonKg: 2.3,
             highlight: "最省钱",
             summary: "避开市区拥堵与高价停车，通勤推荐。",
-            rideshareURL: URL(string: "https://www.blablacar.de/search-car-sharing")
+            rideshareURL: URL(string: "https://www.blablacar.de/search-car-sharing"),
+            electroverseURL: URL(string: "https://electroverse.com/home")
         ),
         rank: 1
     )

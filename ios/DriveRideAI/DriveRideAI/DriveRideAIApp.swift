@@ -5,9 +5,13 @@ struct DriveRideAIApp: App {
     @StateObject private var profileStore = ProfileStore()
     @StateObject private var appLocale = AppLocale.shared
 
+    init() {
+        StartupProbe.mark("App init")
+    }
+
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            AppRootView()
                 .environmentObject(profileStore)
                 .environmentObject(appLocale)
         }

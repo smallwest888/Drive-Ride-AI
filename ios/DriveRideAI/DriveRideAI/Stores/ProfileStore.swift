@@ -7,13 +7,26 @@ final class ProfileStore: ObservableObject {
     @Published var profile: UserProfile {
         didSet { schedulePersist() }
     }
+    @Published private(set) var isLoaded = false
 
     private let storageKey = "DriveRideAI.UserProfile"
+    private let markdownMemoryKey = "DriveRideAI.UserProfileMarkdownMemory"
     private let defaults: UserDefaults
     private var persistTask: Task<Void, Never>?
 
     init(defaults: UserDefaults = .standard) {
+        StartupProbe.mark("ProfileStore init begin")
         self.defaults = defaults
+        self.profile = .default
+        StartupProbe.mark("ProfileStore init end")
+        Task { [weak self] in
+            await Task.yield()
+            await self?.loadPersistedProfile()
+        }
+    }
+
+    private func loadPersistedProfile() {
+        StartupProbe.mark("ProfileStore load begin")
         if let data = defaults.data(forKey: storageKey),
            var decoded = try? JSONDecoder().decode(UserProfile.self, from: data) {
             if let unitPrice = decoded.car.unitPrice, abs(unitPrice - 1.0) < 0.0001 {
@@ -22,9 +35,10 @@ final class ProfileStore: ObservableObject {
             decoded.cityParkingFee = nil
             decoded.parkRideParkingFee = nil
             self.profile = decoded
-        } else {
-            self.profile = .default
         }
+        defaults.set(profile.markdownMemory, forKey: markdownMemoryKey)
+        isLoaded = true
+        StartupProbe.mark("ProfileStore load end")
     }
 
     private func schedulePersist() {
@@ -40,6 +54,7 @@ final class ProfileStore: ObservableObject {
     private func persist(_ profile: UserProfile) {
         if let data = try? JSONEncoder().encode(profile) {
             defaults.set(data, forKey: storageKey)
+            defaults.set(profile.markdownMemory, forKey: markdownMemoryKey)
         }
     }
 }
